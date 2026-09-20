@@ -233,7 +233,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
 
               <button
                 type="button"
-                onClick={() => handleQuickLogin('24890123', 'math_2024')}
+                onClick={() => handleQuickLogin('10003355', 'math_pass_123')}
                 className="p-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 rounded-xl flex items-center justify-between text-right group transition-all"
               >
                 <div className="flex items-center gap-2">
@@ -241,8 +241,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                     📐
                   </div>
                   <div>
-                    <div className="text-xs font-medium text-slate-200">مهندس علوی (دبیر ریاضی)</div>
-                    <div className="text-[10px] text-slate-400 font-mono">کد پرسنلی: 24890123</div>
+                    <div className="text-xs font-medium text-slate-200">استاد حمید کاویانی (دبیر ریاضی)</div>
+                    <div className="text-[10px] text-slate-400 font-mono">کد: 10003355 | رمز: math_pass_123</div>
                   </div>
                 </div>
                 <ArrowRight className="w-3.5 h-3.5 text-slate-400 rotate-180 group-hover:-translate-x-0.5 transition-transform" />
@@ -250,7 +250,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
 
               <button
                 type="button"
-                onClick={() => handleQuickLogin('35912480', 'lit_5890')}
+                onClick={() => handleQuickLogin('10004466', 'lit_pass_456')}
                 className="p-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 rounded-xl flex items-center justify-between text-right group transition-all"
               >
                 <div className="flex items-center gap-2">
@@ -258,8 +258,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                     📚
                   </div>
                   <div>
-                    <div className="text-xs font-medium text-slate-200">خانم صادقی (دبیر ادبیات)</div>
-                    <div className="text-[10px] text-slate-400 font-mono">کد پرسنلی: 35912480</div>
+                    <div className="text-xs font-medium text-slate-200">سرکار خانم مریم سعیدی (دبیر ادبیات)</div>
+                    <div className="text-[10px] text-slate-400 font-mono">کد: 10004466 | رمز: lit_pass_456</div>
                   </div>
                 </div>
                 <ArrowRight className="w-3.5 h-3.5 text-slate-400 rotate-180 group-hover:-translate-x-0.5 transition-transform" />

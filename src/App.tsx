@@ -10,7 +10,7 @@ import { StaffDirectory } from './components/StaffDirectory';
 import { UserProfile } from './components/UserProfile';
 import { BottomNav, TabType } from './components/BottomNav';
 import { CreateGroupModal } from './components/CreateGroupModal';
-import { ArrowRightLeft, Crown, Sparkles } from 'lucide-react';
+import { ArrowRightLeft, Crown, Sparkles, LogOut, UserPlus } from 'lucide-react';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -269,18 +269,28 @@ export default function App() {
               )}
             </div>
 
-            <button
-              onClick={() => {
-                // Quick cycle between principal and teachers
-                const nextUser = users.find(u => u.id !== currentUser.id) || users[0];
-                if (nextUser) handleSwitchUser(nextUser);
-              }}
-              className="text-[10px] text-indigo-400 hover:text-indigo-300 flex items-center gap-1 bg-indigo-500/10 hover:bg-indigo-500/20 px-2 py-0.5 rounded-lg border border-indigo-500/30 transition-colors"
-              title="سوئیچ سریع بین مدیر و همکاران"
-            >
-              <ArrowRightLeft className="w-3 h-3" />
-              <span>تغییر کاربر (تست)</span>
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => {
+                  const nextUser = users.find(u => u.id !== currentUser.id) || users[0];
+                  if (nextUser) handleSwitchUser(nextUser);
+                }}
+                className="text-[10px] text-indigo-400 hover:text-indigo-300 flex items-center gap-1 bg-indigo-500/10 hover:bg-indigo-500/20 px-2 py-0.5 rounded-lg border border-indigo-500/30 transition-colors"
+                title="سوئیچ سریع بین حساب‌ها برای تست پیام‌رسانی"
+              >
+                <ArrowRightLeft className="w-3 h-3" />
+                <span>سوئیچ کاربر</span>
+              </button>
+
+              <button
+                onClick={handleLogout}
+                className="text-[10px] text-emerald-400 hover:text-emerald-300 flex items-center gap-1 bg-emerald-500/10 hover:bg-emerald-500/20 px-2 py-0.5 rounded-lg border border-emerald-500/30 transition-colors"
+                title="خروج و بازگشت به صفحه ثبت‌نام و ورود"
+              >
+                <UserPlus className="w-3 h-3" />
+                <span>ثبت‌نام / ورود</span>
+              </button>
+            </div>
           </div>
 
           {/* Main Viewport */}
