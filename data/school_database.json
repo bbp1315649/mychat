@@ -1,0 +1,294 @@
+{
+  "users": [
+    {
+      "id": "u_principal",
+      "personnelCode": "10001356",
+      "mobile": "09121112233",
+      "fullName": "دکتر محمد رضایی (مدیر مدرسه)",
+      "subject": "مدیر آموزشگاه",
+      "role": "principal",
+      "avatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+      "password": "bbp13156",
+      "isOnline": true,
+      "createdAt": "2026-09-20T21:46:42.373Z"
+    },
+    {
+      "id": "u_deputy",
+      "personnelCode": "10002244",
+      "mobile": "09122223344",
+      "fullName": "مهندس علیرضا حسینی (معاون)",
+      "subject": "معاونت آموزشی و پرورشی",
+      "role": "deputy",
+      "avatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
+      "password": "deputy_pass_99",
+      "isOnline": false,
+      "createdAt": "2026-09-20T21:46:42.381Z"
+    },
+    {
+      "id": "u_101",
+      "personnelCode": "10003355",
+      "mobile": "09123334455",
+      "fullName": "استاد حمید کاویانی",
+      "subject": "دبیر ریاضیات و هندسه",
+      "role": "teacher",
+      "avatar": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80",
+      "password": "math_pass_123",
+      "isOnline": true,
+      "createdAt": "2026-09-20T21:46:42.386Z"
+    },
+    {
+      "id": "u_102",
+      "personnelCode": "10004466",
+      "mobile": "09124445566",
+      "fullName": "سرکار خانم مریم سعیدی",
+      "subject": "دبیر زبان و ادبیات فارسی",
+      "role": "teacher",
+      "avatar": "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150&auto=format&fit=crop&q=80",
+      "password": "lit_pass_456",
+      "isOnline": false,
+      "createdAt": "2026-09-20T21:46:42.390Z"
+    },
+    {
+      "id": "u_103",
+      "personnelCode": "10005577",
+      "mobile": "09125556677",
+      "fullName": "دکتر بهزاد احمدی",
+      "subject": "دبیر فیزیک و آزمایشگاه",
+      "role": "teacher",
+      "avatar": "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150&auto=format&fit=crop&q=80",
+      "password": "phys_pass_789",
+      "isOnline": true,
+      "createdAt": "2026-09-20T21:46:42.395Z"
+    },
+    {
+      "id": "u_1789941860655_racj",
+      "personnelCode": "11223344",
+      "mobile": "09121234567",
+      "fullName": "تست دبیر",
+      "subject": "ریاضی",
+      "role": "teacher",
+      "avatar": "https://images.unsplash.com/photo-1535713875096?w=150&auto=format&fit=crop&q=80",
+      "password": "pass_863225",
+      "isOnline": true,
+      "createdAt": "2026-09-20T22:04:20.658Z"
+    },
+    {
+      "id": "u_1789941962462_hqly",
+      "personnelCode": "56781123",
+      "mobile": "09129998877",
+      "fullName": "استاد سهرابی",
+      "subject": "شیمی",
+      "role": "teacher",
+      "avatar": "https://images.unsplash.com/photo-1535713875063?w=150&auto=format&fit=crop&q=80",
+      "password": "pass_434074",
+      "isOnline": true,
+      "createdAt": "2026-09-20T22:06:02.465Z"
+    },
+    {
+      "id": "u_1789942426994_d344",
+      "personnelCode": "44556677",
+      "mobile": "09191112233",
+      "fullName": "دبیر فیزیک ۲",
+      "subject": "فیزیک",
+      "role": "teacher",
+      "avatar": "https://images.unsplash.com/photo-1535713875086?w=150&auto=format&fit=crop&q=80",
+      "password": "pass_754880",
+      "isOnline": true,
+      "createdAt": "2026-09-20T22:13:46.997Z"
+    },
+    {
+      "id": "u_1789942966505_oank",
+      "personnelCode": "99887766",
+      "mobile": "09351112233",
+      "fullName": "دبیر شیمی جدید",
+      "subject": "شیمی و آزمایشگاه",
+      "role": "teacher",
+      "avatar": "https://images.unsplash.com/photo-1535713875070?w=150&auto=format&fit=crop&q=80",
+      "password": "pass_288572",
+      "isOnline": true,
+      "createdAt": "2026-09-20T22:22:46.505Z"
+    }
+  ],
+  "groups": [
+    {
+      "id": "g_announcements",
+      "name": "کانال رسمی بخشنامه‌ها و اعلانات",
+      "description": "کانال ارسال فوری مصوبات، بخشنامه‌های اداری و اطلاعیه‌های رسمی مدرسه",
+      "avatar": "https://images.unsplash.com/photo-1577495508048-b635879837f1?w=150&auto=format&fit=crop&q=80",
+      "isAnnouncementOnly": true,
+      "createdBy": "u_principal",
+      "createdAt": "2026-09-20T21:46:42.400Z"
+    },
+    {
+      "id": "g_all_teachers",
+      "name": "شورای عمومی معلمان و دبیران",
+      "description": "اتاق هم‌اندیشی و گفتگوی عمومی تمامی همکاران آموزشی و اداری",
+      "avatar": "https://images.unsplash.com/photo-1524178232363-1fb2b075b655?w=150&auto=format&fit=crop&q=80",
+      "isAnnouncementOnly": false,
+      "createdBy": "u_principal",
+      "createdAt": "2026-09-20T21:46:42.405Z"
+    },
+    {
+      "id": "g_science_dept",
+      "name": "گروه آموزشی علوم پایه و ریاضی",
+      "description": "هماهنگی آزمون‌ها، طرح درس و امتحانات هماهنگ دروس تخصصی",
+      "avatar": "https://images.unsplash.com/photo-1636466497217-26a8cbeaf0aa?w=150&auto=format&fit=crop&q=80",
+      "isAnnouncementOnly": false,
+      "createdBy": "u_principal",
+      "createdAt": "2026-09-20T21:46:42.410Z"
+    }
+  ],
+  "groupMembers": [
+    {
+      "groupId": "g_announcements",
+      "userId": "u_principal"
+    },
+    {
+      "groupId": "g_announcements",
+      "userId": "u_deputy"
+    },
+    {
+      "groupId": "g_announcements",
+      "userId": "u_101"
+    },
+    {
+      "groupId": "g_announcements",
+      "userId": "u_102"
+    },
+    {
+      "groupId": "g_announcements",
+      "userId": "u_103"
+    },
+    {
+      "groupId": "g_announcements",
+      "userId": "u_1789941860655_racj"
+    },
+    {
+      "groupId": "g_announcements",
+      "userId": "u_1789941962462_hqly"
+    },
+    {
+      "groupId": "g_announcements",
+      "userId": "u_1789942426994_d344"
+    },
+    {
+      "groupId": "g_all_teachers",
+      "userId": "u_principal"
+    },
+    {
+      "groupId": "g_all_teachers",
+      "userId": "u_deputy"
+    },
+    {
+      "groupId": "g_all_teachers",
+      "userId": "u_101"
+    },
+    {
+      "groupId": "g_all_teachers",
+      "userId": "u_102"
+    },
+    {
+      "groupId": "g_all_teachers",
+      "userId": "u_103"
+    },
+    {
+      "groupId": "g_all_teachers",
+      "userId": "u_1789941860655_racj"
+    },
+    {
+      "groupId": "g_all_teachers",
+      "userId": "u_1789941962462_hqly"
+    },
+    {
+      "groupId": "g_all_teachers",
+      "userId": "u_1789942426994_d344"
+    },
+    {
+      "groupId": "g_science_dept",
+      "userId": "u_principal"
+    },
+    {
+      "groupId": "g_science_dept",
+      "userId": "u_101"
+    },
+    {
+      "groupId": "g_science_dept",
+      "userId": "u_103"
+    },
+    {
+      "groupId": "g_science_dept",
+      "userId": "u_1789941860655_racj"
+    },
+    {
+      "groupId": "g_science_dept",
+      "userId": "u_1789941962462_hqly"
+    },
+    {
+      "groupId": "g_science_dept",
+      "userId": "u_1789942426994_d344"
+    },
+    {
+      "groupId": "g_announcements",
+      "userId": "u_1789942966505_oank"
+    },
+    {
+      "groupId": "g_all_teachers",
+      "userId": "u_1789942966505_oank"
+    },
+    {
+      "groupId": "g_science_dept",
+      "userId": "u_1789942966505_oank"
+    }
+  ],
+  "messages": [
+    {
+      "id": "m_1",
+      "chatId": "g_announcements",
+      "senderId": "u_principal",
+      "senderName": "دکتر محمد رضایی (مدیر مدرسه)",
+      "senderRole": "principal",
+      "senderAvatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+      "content": "همکاران گرامی و دبیران ارجمند، با سلام و آرزوی توفیق؛ لطفاً نمرات مستمر ماهانه را تا پایان هفته جاری در سامانه ثبت فرمایید.",
+      "type": "circular",
+      "isPinned": true,
+      "createdAt": "2026-09-20T21:46:42.420Z"
+    },
+    {
+      "id": "m_2",
+      "chatId": "g_all_teachers",
+      "senderId": "u_principal",
+      "senderName": "دکتر محمد رضایی (مدیر مدرسه)",
+      "senderRole": "principal",
+      "senderAvatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+      "content": "جلسه شورای معلمان روز سه‌شنبه ساعت ۱۲:۳۰ در محل سالن اجتماعات برگزار خواهد شد.",
+      "type": "text",
+      "isPinned": false,
+      "createdAt": "2026-09-20T21:46:42.425Z"
+    },
+    {
+      "id": "m_3",
+      "chatId": "g_all_teachers",
+      "senderId": "u_101",
+      "senderName": "استاد حمید کاویانی",
+      "senderRole": "teacher",
+      "senderAvatar": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80",
+      "content": "سلام جناب دکتر رضایی، هماهنگی‌های گروه ریاضی انجام شده و گزارش پیشرفت دروس آماده ارائه می‌باشد.",
+      "type": "text",
+      "isPinned": false,
+      "createdAt": "2026-09-20T21:46:42.430Z"
+    },
+    {
+      "id": "m_1789942971810_prh",
+      "chatId": "g_all_teachers",
+      "senderId": "u_1789942966505_oank",
+      "senderName": "دبیر شیمی جدید",
+      "senderRole": "teacher",
+      "senderAvatar": "https://images.unsplash.com/photo-1535713875070?w=150&auto=format&fit=crop&q=80",
+      "content": "سلام به همکاران محترم، با تشکر از مدیر مدرسه",
+      "type": "text",
+      "isPinned": false,
+      "createdAt": "2026-09-20T22:22:51.810Z"
+    }
+  ],
+  "reactions": []
+}

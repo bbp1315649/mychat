@@ -1,0 +1,10 @@
+{
+  "name": "پیام‌رسان مدرسه و کادر آموزشی",
+  "description": "سامانه ارتباط و گفتگوی مدیر مدرسه با دبیران و کادر آموزشی، ثبت‌نام با کد پرسنلی ۸ رقمی و موبایل، مدیریت گروه‌ها و رمز عبور همکاران با رابط کاربری اختصاصی موبایل",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
