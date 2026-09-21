@@ -216,6 +216,52 @@ app.delete(['/api/admin/users/:userId', '/api/users/:userId'], async (req, res) 
   }
 });
 
+// 4.8. Update user profile (Name, Photo/Avatar, Mobile, Subject, Password)
+// Requirement: "مدیر بتواند مشخصات و عکس خود را ویرایش کند"
+app.patch('/api/users/:userId/profile', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { fullName, personnelCode, mobile, subject, avatar, password } = req.body;
+
+    const allUsers = await DatabaseRepository.getAllUsers();
+    const existing = allUsers.find(u => u.id === userId);
+    if (!existing) {
+      return res.status(404).json({ error: 'کاربر در سامانه یافت نشد' });
+    }
+
+    // Check personnelCode uniqueness if updated
+    if (personnelCode && personnelCode !== existing.personnelCode) {
+      const cleanCode = normalizeDigits(personnelCode);
+      if (cleanCode.length !== 8 || !/^\d{8}$/.test(cleanCode)) {
+        return res.status(400).json({ error: 'کد پرسنلی باید دقیقاً ۸ رقم عددی باشد' });
+      }
+      const duplicate = await DatabaseRepository.findUserByPersonnelCode(cleanCode);
+      if (duplicate && duplicate.id !== userId) {
+        return res.status(400).json({ error: 'این کد پرسنلی به نام کاربر دیگری ثبت شده است' });
+      }
+    }
+
+    const updatedUser = await DatabaseRepository.updateUserProfile(userId, {
+      fullName,
+      personnelCode: personnelCode ? normalizeDigits(personnelCode) : undefined,
+      mobile: mobile ? normalizeDigits(mobile) : undefined,
+      subject,
+      avatar,
+      password,
+    });
+
+    if (!updatedUser) {
+      return res.status(400).json({ error: 'خطا در به‌روزرسانی مشخصات کاربر' });
+    }
+
+    broadcast('user:updated', updatedUser);
+    res.json({ success: true, user: updatedUser });
+  } catch (error: any) {
+    console.error('Update profile error:', error);
+    res.status(500).json({ error: 'خطا در ویرایش اطلاعات کاربری' });
+  }
+});
+
 // 5. Groups: Get groups
 app.get('/api/groups', async (req, res) => {
   try {

@@ -65,6 +65,17 @@ export class DatabaseRepository {
     return fileDb.updatePassword(userId, newPass);
   }
 
+  static async updateUserProfile(userId: string, updates: {
+    fullName?: string;
+    personnelCode?: string;
+    mobile?: string;
+    subject?: string;
+    avatar?: string;
+    password?: string;
+  }): Promise<User | null> {
+    return fileDb.updateUserProfile(userId, updates);
+  }
+
   // Groups
   static async getGroups(userId?: string): Promise<Group[]> {
     try {

@@ -170,6 +170,29 @@ export default function App() {
       setCurrentUser(prev => prev?.id === userId ? { ...prev, password: newPassword } : prev);
     });
 
+    const unsubUserUpdated = realtime.on('user:updated', (updatedUser: User) => {
+      setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
+      setCurrentUser(prev => {
+        if (prev?.id === updatedUser.id) {
+          localStorage.setItem('school_chat_active_user', JSON.stringify(updatedUser));
+          return updatedUser;
+        }
+        return prev;
+      });
+      // Also update activeChat if direct chat
+      setActiveChat(prev => {
+        if (prev && !prev.isGroup && prev.directUser?.id === updatedUser.id) {
+          return {
+            ...prev,
+            name: updatedUser.fullName,
+            avatar: updatedUser.avatar,
+            directUser: updatedUser,
+          };
+        }
+        return prev;
+      });
+    });
+
     return () => {
       unsubMsg();
       unsubPin();
@@ -180,6 +203,7 @@ export default function App() {
       unsubUserCreated();
       unsubUserDeleted();
       unsubUserPass();
+      unsubUserUpdated();
       realtime.disconnect();
     };
   }, []);
@@ -413,7 +437,7 @@ export default function App() {
                         }}
                         className="py-2 px-4 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-lg transition-all"
                       >
-                        ورود با حساب مدیر مدرسه (رمز: bbp13156)
+                        ورود با حساب مدیر مدرسه
                       </button>
                     </div>
                   )
@@ -425,6 +449,11 @@ export default function App() {
                     allUsers={users}
                     onSwitchUser={handleSwitchUser}
                     onLogout={handleLogout}
+                    onProfileUpdated={(updated) => {
+                      setCurrentUser(updated);
+                      setUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
+                      localStorage.setItem('school_chat_active_user', JSON.stringify(updated));
+                    }}
                   />
                 )}
               </>

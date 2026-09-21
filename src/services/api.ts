@@ -80,6 +80,22 @@ export const api = {
     return data.users || [];
   },
 
+  async updateProfile(userId: string, updates: {
+    fullName?: string;
+    personnelCode?: string;
+    mobile?: string;
+    subject?: string;
+    avatar?: string;
+    password?: string;
+  }): Promise<User> {
+    const data = await safeFetchJson<{ success: boolean; user: User }>(`${API_BASE}/users/${userId}/profile`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+    return data.user;
+  },
+
   async resetPassword(userId: string, newPassword?: string): Promise<{ newPassword: string }> {
     const data = await safeFetchJson<{ newPassword: string }>(`${API_BASE}/admin/users/${userId}/password`, {
       method: 'POST',

@@ -61,7 +61,7 @@ const INITIAL_DATA: DbSchema = {
   users: [
     {
       id: 'u_principal',
-      personnelCode: '10001356',
+      personnelCode: '20859009',
       mobile: '09121112233',
       fullName: 'دکتر محمد رضایی (مدیر مدرسه)',
       subject: 'مدیر آموزشگاه',
@@ -431,6 +431,61 @@ class FileDatabaseEngine {
     u.password = newPass;
     this.save();
     return true;
+  }
+
+  public updateUserProfile(userId: string, updates: {
+    fullName?: string;
+    personnelCode?: string;
+    mobile?: string;
+    subject?: string;
+    avatar?: string;
+    password?: string;
+  }): User | null {
+    const user = this.data.users.find(u => u.id === userId);
+    if (!user) return null;
+
+    if (updates.fullName !== undefined && updates.fullName.trim().length > 0) {
+      user.fullName = updates.fullName.trim();
+    }
+    if (updates.personnelCode !== undefined && updates.personnelCode.trim().length > 0) {
+      user.personnelCode = updates.personnelCode.trim();
+    }
+    if (updates.mobile !== undefined && updates.mobile.trim().length > 0) {
+      user.mobile = updates.mobile.trim();
+    }
+    if (updates.subject !== undefined && updates.subject.trim().length > 0) {
+      user.subject = updates.subject.trim();
+    }
+    if (updates.avatar !== undefined && updates.avatar.trim().length > 0) {
+      user.avatar = updates.avatar.trim();
+    }
+    if (updates.password !== undefined && updates.password.trim().length > 0) {
+      user.password = updates.password.trim();
+    }
+
+    // Also update cached senderName & senderAvatar in existing messages from this user
+    if (updates.fullName || updates.avatar) {
+      for (const msg of this.data.messages) {
+        if (msg.senderId === userId) {
+          if (updates.fullName) msg.senderName = updates.fullName.trim();
+          if (updates.avatar) msg.senderAvatar = updates.avatar.trim();
+        }
+      }
+    }
+
+    this.save();
+    return {
+      id: user.id,
+      personnelCode: user.personnelCode,
+      mobile: user.mobile,
+      fullName: user.fullName,
+      subject: user.subject,
+      role: user.role,
+      avatar: user.avatar,
+      password: user.password || '',
+      isOnline: user.isOnline ?? true,
+      createdAt: user.createdAt,
+    };
   }
 
   public getGroups(userId?: string): Group[] {

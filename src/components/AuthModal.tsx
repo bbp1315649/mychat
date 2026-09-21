@@ -9,9 +9,7 @@ import {
   User as UserIcon, 
   BookOpen, 
   Lock, 
-  ShieldCheck, 
-  ArrowRight,
-  Sparkles,
+  ShieldCheck,
   AlertCircle
 } from 'lucide-react';
 
@@ -35,20 +33,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-
-  // Quick login handler
-  const handleQuickLogin = async (code: string, pass: string) => {
-    setError(null);
-    setLoading(true);
-    try {
-      const user = await api.login(code, pass);
-      onSuccess(user);
-    } catch (err: any) {
-      setError(err.message || 'خطا در ورود سریع');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -169,7 +153,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                 maxLength={8}
                 value={personnelCode}
                 onChange={(e) => setPersonnelCode(toEnglishDigits(e.target.value).replace(/\D/g, ''))}
-                placeholder="مثال: 10001356"
+                placeholder="مثال: 20859009"
                 className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-blue-500 transition-colors pr-9 text-left font-mono"
                 dir="ltr"
               />
@@ -178,14 +162,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-[11px] font-medium text-slate-300">
-                رمز عبور
-              </label>
-              <span className="text-[10px] text-amber-400/90 font-mono">
-                رمز اولیه مدیر: bbp13156
-              </span>
-            </div>
+            <label className="block text-[11px] font-medium text-slate-300 mb-1">
+              رمز عبور
+            </label>
             <div className="relative">
               <input
                 type="password"
@@ -207,64 +186,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
             {loading ? 'در حال ورود...' : 'ورود به حساب کاربری'}
           </button>
 
-          {/* Quick Login Section for Fast Testing */}
-          <div className="mt-4 pt-4 border-t border-slate-800/80">
-            <div className="flex items-center gap-1.5 mb-2.5">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span className="text-[11px] font-medium text-slate-400">ورود سریع برای تست (یک کلیک):</span>
-            </div>
-            <div className="grid grid-cols-1 gap-2">
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('10001356', 'bbp13156')}
-                className="p-2.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-xl flex items-center justify-between text-right group transition-all"
-              >
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold text-xs">
-                    👑
-                  </div>
-                  <div>
-                    <div className="text-xs font-semibold text-amber-300">دکتر رضایی (مدیر آموزشگاه)</div>
-                    <div className="text-[10px] text-amber-400/80 font-mono">کد: 10001356 | رمز: bbp13156</div>
-                  </div>
-                </div>
-                <ArrowRight className="w-3.5 h-3.5 text-amber-400 rotate-180 group-hover:-translate-x-0.5 transition-transform" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('10003355', 'math_pass_123')}
-                className="p-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 rounded-xl flex items-center justify-between text-right group transition-all"
-              >
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-xs">
-                    📐
-                  </div>
-                  <div>
-                    <div className="text-xs font-medium text-slate-200">استاد حمید کاویانی (دبیر ریاضی)</div>
-                    <div className="text-[10px] text-slate-400 font-mono">کد: 10003355 | رمز: math_pass_123</div>
-                  </div>
-                </div>
-                <ArrowRight className="w-3.5 h-3.5 text-slate-400 rotate-180 group-hover:-translate-x-0.5 transition-transform" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('10004466', 'lit_pass_456')}
-                className="p-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 rounded-xl flex items-center justify-between text-right group transition-all"
-              >
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold text-xs">
-                    📚
-                  </div>
-                  <div>
-                    <div className="text-xs font-medium text-slate-200">سرکار خانم مریم سعیدی (دبیر ادبیات)</div>
-                    <div className="text-[10px] text-slate-400 font-mono">کد: 10004466 | رمز: lit_pass_456</div>
-                  </div>
-                </div>
-                <ArrowRight className="w-3.5 h-3.5 text-slate-400 rotate-180 group-hover:-translate-x-0.5 transition-transform" />
-              </button>
-            </div>
+          {/* Footer note */}
+          <div className="mt-4 pt-4 border-t border-slate-800/80 text-center">
+            <span className="text-[11px] text-slate-500">
+              دبیران گرامی، رمز عبور اولیه توسط مدیریت آموزشگاه به شما تحویل داده می‌شود.
+            </span>
           </div>
         </form>
       )}
