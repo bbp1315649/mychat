@@ -36,7 +36,7 @@ export interface DbSchema {
     senderRole: string;
     senderAvatar: string;
     content: string;
-    type: 'text' | 'voice' | 'circular' | 'file';
+    type: 'text' | 'image' | 'voice' | 'file' | 'announcement' | 'circular';
     fileUrl?: string;
     fileName?: string;
     voiceDuration?: number;
@@ -387,15 +387,42 @@ class FileDatabaseEngine {
 
     this.data.users.push(newUser);
 
-    // Auto-add new member to all groups
-    for (const g of this.data.groups) {
-      if (!this.data.groupMembers.some(m => m.groupId === g.id && m.userId === newId)) {
-        this.data.groupMembers.push({ groupId: g.id, userId: newId });
-      }
-    }
+    // Newly registered users are NOT automatically enrolled in groups.
+    // Membership must be intentionally designated and approved by the school principal.
 
     this.save();
     return newUser;
+  }
+
+  public deleteUser(userId: string): boolean {
+    const u = this.data.users.find(user => user.id === userId);
+    if (!u) return false;
+    // Security: Principal account cannot be deleted
+    if (u.role === 'principal') return false;
+
+    // Remove user record
+    this.data.users = this.data.users.filter(user => user.id !== userId);
+    // Remove user from all groups
+    this.data.groupMembers = this.data.groupMembers.filter(m => m.userId !== userId);
+    // Remove user's reactions
+    this.data.reactions = this.data.reactions.filter(r => r.userId !== userId);
+
+    this.save();
+    return true;
+  }
+
+  public removeGroupMember(groupId: string, userId: string): string[] {
+    const u = this.data.users.find(user => user.id === userId);
+    // Principal cannot be removed from school groups
+    if (u?.role === 'principal') {
+      return this.data.groupMembers.filter(m => m.groupId === groupId).map(m => m.userId);
+    }
+
+    this.data.groupMembers = this.data.groupMembers.filter(
+      m => !(m.groupId === groupId && m.userId === userId)
+    );
+    this.save();
+    return this.data.groupMembers.filter(m => m.groupId === groupId).map(m => m.userId);
   }
 
   public updatePassword(userId: string, newPass: string): boolean {
@@ -544,7 +571,7 @@ class FileDatabaseEngine {
     senderRole: string;
     senderAvatar: string;
     content: string;
-    type?: 'text' | 'voice' | 'circular' | 'file';
+    type?: 'text' | 'image' | 'voice' | 'file' | 'announcement' | 'circular';
     fileUrl?: string;
     fileName?: string;
     voiceDuration?: number;

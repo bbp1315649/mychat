@@ -40,12 +40,14 @@ export default function App() {
       setGroups(gList);
 
       // Load initial messages for groups
-      const allMsgs: Message[] = [];
+      const allMsgsMap = new Map<string, Message>();
       for (const g of gList) {
         const gMsgs = await api.getMessages(g.id);
-        allMsgs.push(...gMsgs);
+        for (const m of gMsgs) {
+          allMsgsMap.set(m.id, m);
+        }
       }
-      setMessages(allMsgs);
+      setMessages(Array.from(allMsgsMap.values()));
     } catch (err) {
       console.warn('Initial data load notice:', err);
     }
@@ -123,12 +125,43 @@ export default function App() {
 
     const unsubGroupMembers = realtime.on('group:members_updated', ({ groupId, memberIds }: { groupId: string; memberIds: string[] }) => {
       setGroups(prev => prev.map(g => g.id === groupId ? { ...g, memberIds } : g));
+      setActiveChat(prev => {
+        if (prev && prev.isGroup && prev.groupData?.id === groupId) {
+          return {
+            ...prev,
+            groupData: { ...prev.groupData, memberIds },
+          };
+        }
+        return prev;
+      });
     });
 
     const unsubUserCreated = realtime.on('user:created', (newUser: User) => {
       setUsers(prev => {
         if (prev.some(u => u.id === newUser.id)) return prev;
         return [...prev, newUser];
+      });
+    });
+
+    const unsubUserDeleted = realtime.on('user:deleted', ({ userId }: { userId: string }) => {
+      setUsers(prev => prev.filter(u => u.id !== userId));
+      setGroups(prev => prev.map(g => ({
+        ...g,
+        memberIds: g.memberIds.filter(id => id !== userId),
+      })));
+      setCurrentUser(prev => {
+        if (prev?.id === userId) {
+          alert('حساب کاربری شما توسط مدیر آموزشگاه از سامانه حذف گردید.');
+          localStorage.removeItem('school_chat_active_user');
+          return null as any;
+        }
+        return prev;
+      });
+      setActiveChat(prev => {
+        if (prev && !prev.isGroup && prev.directUser?.id === userId) {
+          return null;
+        }
+        return prev;
       });
     });
 
@@ -145,6 +178,7 @@ export default function App() {
       unsubGroupUpdated();
       unsubGroupMembers();
       unsubUserCreated();
+      unsubUserDeleted();
       unsubUserPass();
       realtime.disconnect();
     };
@@ -187,7 +221,11 @@ export default function App() {
       const msgs = await api.getMessages(group.id);
       setMessages(prev => {
         const others = prev.filter(m => m.chatId !== group.id);
-        return [...others, ...msgs];
+        const map = new Map<string, Message>();
+        for (const m of msgs) {
+          map.set(m.id, m);
+        }
+        return [...others, ...Array.from(map.values())];
       });
     } catch (e) {
       // ignore
@@ -209,7 +247,11 @@ export default function App() {
       const msgs = await api.getMessages(directChatId);
       setMessages(prev => {
         const others = prev.filter(m => m.chatId !== directChatId);
-        return [...others, ...msgs];
+        const map = new Map<string, Message>();
+        for (const m of msgs) {
+          map.set(m.id, m);
+        }
+        return [...others, ...Array.from(map.values())];
       });
     } catch (e) {
       // ignore
@@ -307,9 +349,15 @@ export default function App() {
                 messages={messages}
                 allUsers={users}
                 onBack={() => setActiveChat(null)}
-                onSendMessage={(msg) => setMessages(prev => [...prev, msg])}
+                onSendMessage={(msg) => setMessages(prev => {
+                  if (prev.some(m => m.id === msg.id)) {
+                    return prev.map(m => m.id === msg.id ? msg : m);
+                  }
+                  return [...prev, msg];
+                })}
                 onPinMessage={handlePinMessage}
                 onReactMessage={handleReactMessage}
+                onRefreshGroups={() => loadData(currentUser || undefined)}
               />
             ) : (
               <>

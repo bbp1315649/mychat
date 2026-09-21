@@ -234,10 +234,6 @@
     {
       "groupId": "g_all_teachers",
       "userId": "u_1789942966505_oank"
-    },
-    {
-      "groupId": "g_science_dept",
-      "userId": "u_1789942966505_oank"
     }
   ],
   "messages": [
@@ -288,6 +284,33 @@
       "type": "text",
       "isPinned": false,
       "createdAt": "2026-09-20T22:22:51.810Z"
+    },
+    {
+      "id": "m_1790003153163_rfv",
+      "chatId": "u_deputy_u_principal",
+      "senderId": "u_principal",
+      "senderName": "دکتر محمد رضایی (مدیر مدرسه)",
+      "senderRole": "principal",
+      "senderAvatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+      "content": "بخشنامه تقویم آموزشی و برنامه هفتگی دبیران",
+      "type": "file",
+      "fileName": "تقویم_اجرایی_آموزشگاه_۱۴۰۳.pdf",
+      "isPinned": false,
+      "createdAt": "2026-09-21T15:05:53.163Z"
+    },
+    {
+      "id": "m_1790003334456_9gz",
+      "chatId": "g_science_dept",
+      "senderId": "u_101",
+      "senderName": "استاد حمید کاویانی",
+      "senderRole": "teacher",
+      "senderAvatar": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80",
+      "content": "تصویر گزارش آزمایش نور و شکست پرتو در کلاس فیزیک",
+      "type": "image",
+      "fileUrl": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=",
+      "fileName": "physics_experiment.jpg",
+      "isPinned": false,
+      "createdAt": "2026-09-21T15:08:54.456Z"
     }
   ],
   "reactions": []

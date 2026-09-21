@@ -19,7 +19,9 @@ import {
   Sparkles,
   AlertCircle,
   Megaphone,
-  UserPlus
+  UserPlus,
+  Trash2,
+  UserMinus
 } from 'lucide-react';
 
 interface AdminPanelProps {
@@ -155,6 +157,39 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       alert(err.message || 'خطا در ذخیره اعضا');
     } finally {
       setSaveMembersLoading(false);
+    }
+  };
+
+  // Principal removes a member directly from selected group
+  // Requirement: "مدیر قابلیت حذف افراد ... از گروه را داشته باشد"
+  const handleDirectRemoveMember = async (groupId: string, userId: string, userName: string) => {
+    if (!window.confirm(`آیا از حذف «${userName}» از این گروه اطمینان دارید؟`)) return;
+    try {
+      const updatedMembers = await api.removeGroupMember(groupId, userId);
+      setCurrentGroupMemberIds(updatedMembers);
+      onRefreshGroups();
+      setSaveMembersSuccess(`«${userName}» با موفقیت از گروه حذف شد.`);
+      setTimeout(() => setSaveMembersSuccess(null), 3000);
+    } catch (err: any) {
+      alert(err.message || 'خطا در حذف عضو از گروه');
+    }
+  };
+
+  // Principal deletes a user / cancels registration from school database
+  // Requirement: "مدیر قابلیت حذف افراد از ثبت نام ... را داشته باشد"
+  const handleDeleteUser = async (userId: string, fullName: string) => {
+    if (!window.confirm(`آیا از حذف کامل «${fullName}» از سامانه و لغو ثبت‌نام اطمینان دارید؟ تمام دسترسی‌ها و حساب کاربری وی حذف خواهد شد.`)) {
+      return;
+    }
+
+    try {
+      await api.deleteUser(userId);
+      setPasswordNotice(`کاربر «${fullName}» با موفقیت از سامانه آموزشگاه حذف شد.`);
+      onRefreshUsers();
+      onRefreshGroups();
+      setTimeout(() => setPasswordNotice(null), 4000);
+    } catch (err: any) {
+      alert(err.message || 'خطا در حذف کاربر');
     }
   };
 
@@ -408,6 +443,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         </div>
                       </div>
                     )}
+
+                    {/* Admin delete staff / revoke registration */}
+                    {!isUserPrincipal && (
+                      <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between">
+                        <span className="text-[10px] text-slate-500">مدیریت حساب و عضویت:</span>
+                        <button
+                          onClick={() => handleDeleteUser(u.id, u.fullName)}
+                          className="px-2.5 py-1 text-[10px] text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-lg flex items-center gap-1 transition-all"
+                          title="حذف این کاربر از ثبت‌نام و پایگاه داده مدرسه"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>حذف کاربر از ثبت‌نام و مدرسه</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -632,13 +682,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                             مدیر دائم
                           </span>
                         ) : isMember ? (
-                          <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
-                            <Check className="w-3 h-3" />
-                            عضو است
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+                              <Check className="w-3 h-3" />
+                              عضو است
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDirectRemoveMember(selectedGroupId, u.id, u.fullName);
+                              }}
+                              className="rounded-lg text-rose-300 hover:text-rose-200 hover:bg-rose-500/25 transition-all text-[10px] flex items-center gap-1 bg-rose-500/15 border border-rose-500/30 px-2 py-0.5"
+                              title="حذف فوری این دبیر از گروه جاری"
+                            >
+                              <UserMinus className="w-3 h-3" />
+                              <span>حذف از گروه</span>
+                            </button>
+                          </div>
                         ) : (
-                          <span className="text-[10px] bg-slate-800 text-slate-500 px-2 py-0.5 rounded-full">
-                            غیرعضو
+                          <span className="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full border border-slate-700">
+                            غیرعضو (کلیک جهت افزودن)
                           </span>
                         )}
                       </div>

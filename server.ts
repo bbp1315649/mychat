@@ -187,6 +187,35 @@ app.post(['/api/admin/users/:userId/password', '/api/users/:userId/password'], a
   }
 });
 
+// 4.5. Principal deletes user / cancels staff registration
+// Requirement: "مدیر قابلیت حذف افراد از ثبت نام و از گروه را داشته باشد"
+app.delete(['/api/admin/users/:userId', '/api/users/:userId'], async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const allUsers = await DatabaseRepository.getAllUsers();
+    const target = allUsers.find(u => u.id === userId);
+
+    if (!target) {
+      return res.status(404).json({ error: 'کاربر مورد نظر در سامانه یافت نشد' });
+    }
+
+    if (target.role === 'principal') {
+      return res.status(403).json({ error: 'حساب کاربری مدیر آموزشگاه قابل حذف نمی‌باشد' });
+    }
+
+    const success = await DatabaseRepository.deleteUser(userId);
+    if (!success) {
+      return res.status(400).json({ error: 'عملیات حذف کاربر با خطا مواجه شد' });
+    }
+
+    broadcast('user:deleted', { userId });
+    res.json({ success: true, userId, message: `کاربر «${target.fullName}» با موفقیت حذف شد` });
+  } catch (error: any) {
+    console.error('Delete user error:', error);
+    res.status(500).json({ error: 'خطا در حذف کاربر از سامانه' });
+  }
+});
+
 // 5. Groups: Get groups
 app.get('/api/groups', async (req, res) => {
   try {
@@ -253,6 +282,30 @@ app.post(['/api/admin/groups/:groupId/members', '/api/groups/:groupId/members'],
   } catch (error: any) {
     console.error('Update group members error:', error);
     res.status(500).json({ error: 'خطا در به‌روزرسانی اعضای گروه' });
+  }
+});
+
+// 7.5. Principal removes a member from a group
+// Requirement: "مدیر قابلیت حذف افراد ... از گروه را داشته باشد"
+app.delete(['/api/admin/groups/:groupId/members/:userId', '/api/groups/:groupId/members/:userId'], async (req, res) => {
+  try {
+    const { groupId, userId } = req.params;
+    const allUsers = await DatabaseRepository.getAllUsers();
+    const target = allUsers.find(u => u.id === userId);
+
+    if (target?.role === 'principal') {
+      return res.status(403).json({ error: 'مدیر آموزشگاه از گروه‌ها حذف نمی‌شود' });
+    }
+
+    const updated = await DatabaseRepository.removeGroupMember(groupId, userId);
+    const groups = await DatabaseRepository.getGroups();
+    const updatedGroup = groups.find(g => g.id === groupId);
+
+    broadcast('group:members_updated', { groupId, memberIds: updated });
+    res.json({ success: true, groupId, memberIds: updated, group: updatedGroup, message: 'عضو با موفقیت از گروه حذف گردید' });
+  } catch (error: any) {
+    console.error('Remove group member error:', error);
+    res.status(500).json({ error: 'خطا در حذف عضو از گروه' });
   }
 });
 

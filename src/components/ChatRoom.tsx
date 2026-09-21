@@ -20,8 +20,14 @@ import {
   X,
   Reply,
   Download,
-  Info
+  Info,
+  UserMinus,
+  Camera,
+  Maximize2,
+  Image as ImageIcon
 } from 'lucide-react';
+import { CameraCaptureModal } from './CameraCaptureModal';
+import { ImageLightboxModal } from './ImageLightboxModal';
 
 interface ChatRoomProps {
   chatId: string;
@@ -37,6 +43,7 @@ interface ChatRoomProps {
   onSendMessage: (msg: Message) => void;
   onPinMessage: (messageId: string) => void;
   onReactMessage: (messageId: string, emoji: string) => void;
+  onRefreshGroups?: () => void;
 }
 
 export const ChatRoom: React.FC<ChatRoomProps> = ({
@@ -53,6 +60,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
   onSendMessage,
   onPinMessage,
   onReactMessage,
+  onRefreshGroups,
 }) => {
   const [inputText, setInputText] = useState('');
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
@@ -60,18 +68,73 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
   const [recordTimer, setRecordTimer] = useState(0);
   const [activeAudioId, setActiveAudioId] = useState<string | null>(null);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [showCameraModal, setShowCameraModal] = useState(false);
+  const [activeLightboxImage, setActiveLightboxImage] = useState<{
+    url: string;
+    senderName?: string;
+    senderAvatar?: string;
+    caption?: string;
+    timestamp?: string;
+  } | null>(null);
   const [showReactionPickerForId, setShowReactionPickerForId] = useState<string | null>(null);
   const [showGroupInfoModal, setShowGroupInfoModal] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+
+  // Send photo captured via camera or selected from device
+  const handleSendPhoto = async (photoDataUrl: string, caption: string, fileName?: string) => {
+    setIsSending(true);
+    try {
+      const msg = await api.sendMessage({
+        chatId,
+        senderId: currentUser.id,
+        content: caption,
+        type: 'image',
+        fileUrl: photoDataUrl,
+        fileName: fileName || 'classroom_report.jpg',
+      });
+      onSendMessage(msg);
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recordIntervalRef = useRef<any>(null);
+
+  // Principal removes member from this group
+  // Requirement: "مدیر قابلیت حذف افراد ... از گروه را داشته باشد"
+  const handleRemoveMemberFromCurrentGroup = async (userId: string, memberName: string) => {
+    if (!groupData) return;
+    if (!window.confirm(`آیا از حذف «${memberName}» از گروه «${groupData.name}» اطمینان دارید؟`)) {
+      return;
+    }
+
+    try {
+      const updatedMembers = await api.removeGroupMember(groupData.id, userId);
+      groupData.memberIds = updatedMembers;
+      if (onRefreshGroups) {
+        onRefreshGroups();
+      }
+    } catch (err: any) {
+      alert(err.message || 'خطا در حذف عضو از گروه');
+    }
+  };
 
   const isPrincipal = currentUser.role === 'principal';
   const isAnnouncementGroup = isGroup && groupData?.isAnnouncementOnly;
   const canSend = !isAnnouncementGroup || isPrincipal || currentUser.role === 'deputy';
 
-  // Filter messages for this chat
-  const chatMessages = messages.filter(m => m.chatId === chatId);
+  // Filter and deduplicate messages for this chat to guarantee strictly unique keys
+  const chatMessages = React.useMemo(() => {
+    const map = new Map<string, Message>();
+    for (const m of messages) {
+      if (m.chatId === chatId) {
+        map.set(m.id, m);
+      }
+    }
+    return Array.from(map.values());
+  }, [messages, chatId]);
+
   const pinnedMessage = chatMessages.find(m => m.isPinned);
 
   // Auto scroll to bottom
@@ -82,8 +145,9 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
   // Handle Send text message
   const handleSend = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!inputText.trim()) return;
+    if (!inputText.trim() || isSending) return;
 
+    setIsSending(true);
     const textToSend = inputText.trim();
     setInputText('');
     const replyToSend = replyTarget ? {
@@ -104,6 +168,9 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
       onSendMessage(msg);
     } catch (err: any) {
       alert(err.message || 'خطا در ارسال پیام');
+      setInputText(textToSend); // Restore unsent message
+    } finally {
+      setIsSending(false);
     }
   };
 
@@ -389,8 +456,37 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                     </div>
                   )}
 
-                  {/* Text content */}
-                  {msg.type !== 'voice' && (
+                  {/* Message Content: Image / Classroom Photo */}
+                  {(msg.type === 'image' || (msg.fileUrl && (msg.fileUrl.startsWith('data:image') || msg.fileUrl.match(/\.(jpg|jpeg|png|webp|gif)/i)))) && (
+                    <div 
+                      onClick={() => setActiveLightboxImage({
+                        url: msg.fileUrl || '',
+                        senderName: msg.senderName,
+                        senderAvatar: msg.senderAvatar,
+                        caption: msg.content,
+                        timestamp: msg.timestamp
+                      })}
+                      className="mb-2 rounded-xl overflow-hidden border border-white/10 relative group cursor-pointer bg-black/40 select-none shadow-sm"
+                    >
+                      <img
+                        src={msg.fileUrl}
+                        alt={msg.content || 'تصویر گزارش کلاسی'}
+                        className="w-full max-h-72 object-cover rounded-lg group-hover:scale-[1.01] transition-all duration-200"
+                        loading="lazy"
+                      />
+                      <div className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-md text-[9px] text-white flex items-center gap-1 border border-white/20 shadow">
+                        <Camera className="w-3 h-3 text-blue-400" />
+                        <span>گزارش کلاسی</span>
+                      </div>
+                      <div className="absolute bottom-2 left-2 p-1.5 rounded-lg bg-black/60 backdrop-blur-sm text-white/90 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 text-[10px] shadow">
+                        <Maximize2 className="w-3 h-3" />
+                        <span>مشاهده اندازه کامل</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Text content / Caption */}
+                  {msg.type !== 'voice' && msg.content && (
                     <p className="text-xs leading-relaxed whitespace-pre-wrap select-text">
                       {msg.content}
                     </p>
@@ -518,6 +614,18 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
         <div className="bg-slate-900 border-t border-slate-800 p-3 grid grid-cols-3 gap-2 z-20">
           <button
             type="button"
+            onClick={() => {
+              setShowAttachMenu(false);
+              setShowCameraModal(true);
+            }}
+            className="p-2.5 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 flex flex-col items-center gap-1.5 text-blue-300 transition-all group"
+          >
+            <Camera className="w-5 h-5 text-blue-400 group-hover:scale-110 transition-transform" />
+            <span className="text-[10px] font-medium">دوربین و عکس کلاسی</span>
+          </button>
+
+          <button
+            type="button"
             onClick={handleSendOfficialAnnouncement}
             className="p-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 flex flex-col items-center gap-1.5 text-amber-300 transition-all"
           >
@@ -528,30 +636,10 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
           <button
             type="button"
             onClick={handleSendDocument}
-            className="p-2.5 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 flex flex-col items-center gap-1.5 text-blue-300 transition-all"
-          >
-            <FileText className="w-5 h-5 text-blue-400" />
-            <span className="text-[10px] font-medium">فایل و سند</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setShowAttachMenu(false);
-              const text = prompt('متن کوتاه برای ارسال پیام تصویری/گزارش تدریس:', 'تصویر نمونه کار و تمرین درس');
-              if (text) {
-                api.sendMessage({
-                  chatId,
-                  senderId: currentUser.id,
-                  content: text,
-                  type: 'text',
-                }).then(msg => onSendMessage(msg));
-              }
-            }}
             className="p-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 flex flex-col items-center gap-1.5 text-emerald-300 transition-all"
           >
-            <Sparkles className="w-5 h-5 text-emerald-400" />
-            <span className="text-[10px] font-medium">گزارش کلاسی</span>
+            <FileText className="w-5 h-5 text-emerald-400" />
+            <span className="text-[10px] font-medium">فایل و سند</span>
           </button>
         </div>
       )}
@@ -603,6 +691,16 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
               title="پیوست بخشنامه، فایل یا گزارش"
             >
               <Paperclip className="w-4 h-4" />
+            </button>
+
+            {/* Direct Camera Button */}
+            <button
+              type="button"
+              onClick={() => setShowCameraModal(true)}
+              className="p-2 bg-slate-950 hover:bg-slate-850 hover:text-blue-400 text-slate-400 border border-slate-800 rounded-xl transition-colors"
+              title="ارسال عکس با دوربین یا گالری گوشی"
+            >
+              <Camera className="w-4 h-4" />
             </button>
 
             {/* Input field */}
@@ -670,7 +768,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                 فهرست اعضا ({groupData.memberIds.length} نفر):
               </div>
               <div className="max-h-48 overflow-y-auto space-y-1.5">
-                {groupData.memberIds.map((mId) => {
+                {Array.from(new Set(groupData.memberIds || [])).map((mId) => {
                   const member = allUsers.find(u => u.id === mId);
                   if (!member) return null;
                   return (
@@ -682,15 +780,30 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                           <div className="text-[10px] text-slate-500">{member.subject}</div>
                         </div>
                       </div>
-                      {member.role === 'principal' ? (
-                        <span className="bg-amber-500/20 text-amber-300 text-[10px] px-2 py-0.5 rounded-full font-medium">
-                          مدیر
-                        </span>
-                      ) : (
-                        <span className="text-[10px] text-slate-500 font-mono">
-                          {member.personnelCode}
-                        </span>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {member.role === 'principal' ? (
+                          <span className="bg-amber-500/20 text-amber-300 text-[10px] px-2 py-0.5 rounded-full font-medium">
+                            مدیر
+                          </span>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              {member.personnelCode}
+                            </span>
+                            {currentUser.role === 'principal' && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveMemberFromCurrentGroup(member.id, member.fullName)}
+                                className="p-1 rounded-lg text-rose-400 hover:text-rose-200 hover:bg-rose-500/20 bg-rose-500/10 border border-rose-500/20 transition-all flex items-center gap-1 text-[10px] px-2 py-0.5"
+                                title={`حذف ${member.fullName} از این گروه`}
+                              >
+                                <UserMinus className="w-3 h-3" />
+                                <span>حذف از گروه</span>
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -706,6 +819,24 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
           </div>
         </div>
       )}
+
+      {/* Camera Capture & Classroom Photo Modal */}
+      <CameraCaptureModal
+        isOpen={showCameraModal}
+        onClose={() => setShowCameraModal(false)}
+        onSendPhoto={handleSendPhoto}
+      />
+
+      {/* Fullscreen Photo Lightbox Modal */}
+      <ImageLightboxModal
+        isOpen={!!activeLightboxImage}
+        onClose={() => setActiveLightboxImage(null)}
+        imageUrl={activeLightboxImage?.url || ''}
+        senderName={activeLightboxImage?.senderName}
+        senderAvatar={activeLightboxImage?.senderAvatar}
+        caption={activeLightboxImage?.caption}
+        timestamp={activeLightboxImage?.timestamp}
+      />
     </div>
   );
 };

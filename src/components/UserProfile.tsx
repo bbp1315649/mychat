@@ -105,7 +105,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({
         </div>
 
         <div className="space-y-1.5">
-          {allUsers.map((u) => {
+          {Array.from(new Map(allUsers.map(u => [u.id, u])).values()).map((u) => {
             const isCurrent = u.id === currentUser.id;
             return (
               <button

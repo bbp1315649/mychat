@@ -89,6 +89,12 @@ export const api = {
     return data;
   },
 
+  async deleteUser(userId: string): Promise<void> {
+    await safeFetchJson(`${API_BASE}/admin/users/${userId}`, {
+      method: 'DELETE',
+    });
+  },
+
   // Groups
   async getGroups(userId?: string): Promise<Group[]> {
     const url = userId ? `${API_BASE}/groups?userId=${userId}` : `${API_BASE}/groups`;
@@ -118,6 +124,16 @@ export const api = {
       body: JSON.stringify({ memberIds }),
     });
     return data.group;
+  },
+
+  async removeGroupMember(groupId: string, userId: string): Promise<string[]> {
+    const data = await safeFetchJson<{ success: boolean; memberIds: string[] }>(
+      `${API_BASE}/admin/groups/${groupId}/members/${userId}`,
+      {
+        method: 'DELETE',
+      }
+    );
+    return data.memberIds;
   },
 
   async deleteGroup(groupId: string): Promise<void> {

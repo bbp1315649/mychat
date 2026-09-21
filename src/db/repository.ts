@@ -57,6 +57,10 @@ export class DatabaseRepository {
     return fileDb.createUser(userData);
   }
 
+  static async deleteUser(userId: string): Promise<boolean> {
+    return fileDb.deleteUser(userId);
+  }
+
   static async updatePassword(userId: string, newPass: string): Promise<boolean> {
     return fileDb.updatePassword(userId, newPass);
   }
@@ -84,6 +88,10 @@ export class DatabaseRepository {
 
   static async updateGroupMembers(groupId: string, memberIds: string[]): Promise<string[]> {
     return fileDb.updateGroupMembers(groupId, memberIds);
+  }
+
+  static async removeGroupMember(groupId: string, userId: string): Promise<string[]> {
+    return fileDb.removeGroupMember(groupId, userId);
   }
 
   static async deleteGroup(groupId: string): Promise<boolean> {
