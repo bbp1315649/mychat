@@ -10,7 +10,7 @@ import { StaffDirectory } from './components/StaffDirectory';
 import { UserProfile } from './components/UserProfile';
 import { BottomNav, TabType } from './components/BottomNav';
 import { CreateGroupModal } from './components/CreateGroupModal';
-import { ArrowRightLeft, Crown, Sparkles, LogOut, UserPlus } from 'lucide-react';
+import { Crown, LogOut, Lock } from 'lucide-react';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -73,16 +73,13 @@ export default function App() {
           }
         }
 
-        // If no user saved, default to Principal so user immediately experiences the manager panel with password bbp13156
-        if (!initialUser) {
-          const principal = uList.find(u => u.role === 'principal');
-          if (principal) initialUser = principal;
-        }
-
         if (initialUser) {
           setCurrentUser(initialUser);
           localStorage.setItem('school_chat_active_user', JSON.stringify(initialUser));
           await loadData(initialUser);
+        } else {
+          setCurrentUser(null);
+          localStorage.removeItem('school_chat_active_user');
         }
       } catch (e) {
         console.error('Initialization error:', e);
@@ -216,14 +213,6 @@ export default function App() {
     setActiveChat(null);
   };
 
-  // Switch User for quick testing
-  const handleSwitchUser = (user: User) => {
-    setCurrentUser(user);
-    localStorage.setItem('school_chat_active_user', JSON.stringify(user));
-    loadData(user);
-    setActiveChat(null);
-  };
-
   // Logout
   const handleLogout = () => {
     setCurrentUser(null);
@@ -318,45 +307,31 @@ export default function App() {
         <AuthModal onSuccess={handleAuthSuccess} />
       ) : (
         <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-          {/* Quick Role Switcher Sub-header for effortless test switching */}
-          <div className="bg-slate-900/90 border-b border-slate-800/80 px-3 py-1 flex items-center justify-between text-[11px] shrink-0">
+          {/* Top Info Bar */}
+          <div className="bg-slate-900/95 border-b border-slate-800 px-3 py-1.5 flex items-center justify-between text-[11px] shrink-0">
             <div className="flex items-center gap-1.5 text-slate-300">
               <span className="text-slate-400">حساب فعال:</span>
-              <span className="font-bold text-slate-100">{currentUser.fullName.split(' ')[0]}</span>
+              <span className="font-bold text-slate-100">{currentUser.fullName}</span>
               {currentUser.role === 'principal' ? (
-                <span className="bg-amber-500/20 text-amber-300 text-[9px] px-1.5 py-0.2 rounded font-bold border border-amber-500/30 flex items-center gap-0.5">
+                <span className="bg-amber-500/20 text-amber-300 text-[9px] px-1.5 py-0.5 rounded-full font-bold border border-amber-500/30 flex items-center gap-0.5">
                   <Crown className="w-2.5 h-2.5" />
                   مدیر
                 </span>
               ) : (
-                <span className="bg-blue-500/20 text-blue-300 text-[9px] px-1.5 py-0.2 rounded font-medium border border-blue-500/30">
-                  {currentUser.subject.split(' ')[0]}
+                <span className="bg-blue-500/20 text-blue-300 text-[9px] px-1.5 py-0.5 rounded-full font-medium border border-blue-500/30">
+                  {currentUser.subject}
                 </span>
               )}
             </div>
 
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => {
-                  const nextUser = users.find(u => u.id !== currentUser.id) || users[0];
-                  if (nextUser) handleSwitchUser(nextUser);
-                }}
-                className="text-[10px] text-indigo-400 hover:text-indigo-300 flex items-center gap-1 bg-indigo-500/10 hover:bg-indigo-500/20 px-2 py-0.5 rounded-lg border border-indigo-500/30 transition-colors"
-                title="سوئیچ سریع بین حساب‌ها برای تست پیام‌رسانی"
-              >
-                <ArrowRightLeft className="w-3 h-3" />
-                <span>سوئیچ کاربر</span>
-              </button>
-
-              <button
-                onClick={handleLogout}
-                className="text-[10px] text-emerald-400 hover:text-emerald-300 flex items-center gap-1 bg-emerald-500/10 hover:bg-emerald-500/20 px-2 py-0.5 rounded-lg border border-emerald-500/30 transition-colors"
-                title="خروج و بازگشت به صفحه ثبت‌نام و ورود"
-              >
-                <UserPlus className="w-3 h-3" />
-                <span>ثبت‌نام / ورود</span>
-              </button>
-            </div>
+            <button
+              onClick={handleLogout}
+              className="text-[11px] text-rose-400 hover:text-rose-300 flex items-center gap-1 bg-rose-500/10 hover:bg-rose-500/20 px-2 py-1 rounded-lg border border-rose-500/30 transition-colors"
+              title="خروج از حساب کاربری فعلی"
+            >
+              <LogOut className="w-3 h-3" />
+              <span>خروج</span>
+            </button>
           </div>
 
           {/* Main Viewport */}
@@ -427,17 +402,15 @@ export default function App() {
                         <Crown className="w-7 h-7" />
                       </div>
                       <h3 className="text-sm font-bold text-slate-200 mb-1">پنل ویژه مدیریت آموزشگاه</h3>
-                      <p className="text-xs text-slate-400 max-w-xs mb-4">
-                        این بخش مختص مدیر مدرسه است. شما با حساب دبیر وارد شده‌اید. برای دسترسی، لطفاً به حساب مدیر سوئیچ کنید.
+                      <p className="text-xs text-slate-400 max-w-xs mb-4 leading-relaxed">
+                        این بخش دارای دسترسی حفاظت‌شده مدیریت آموزشگاه است. برای ورود به این بخش، باید با کد پرسنلی و رمز عبور مدیر وارد سامانه شوید.
                       </p>
                       <button
-                        onClick={() => {
-                          const principal = users.find(u => u.role === 'principal');
-                          if (principal) handleSwitchUser(principal);
-                        }}
-                        className="py-2 px-4 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-lg transition-all"
+                        onClick={handleLogout}
+                        className="py-2.5 px-5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-xl shadow-lg transition-all active:scale-95 flex items-center gap-2"
                       >
-                        ورود با حساب مدیر مدرسه
+                        <Lock className="w-3.5 h-3.5" />
+                        <span>خروج و ورود با حساب مدیر</span>
                       </button>
                     </div>
                   )
@@ -446,8 +419,6 @@ export default function App() {
                 {currentTab === 'profile' && (
                   <UserProfile
                     currentUser={currentUser}
-                    allUsers={users}
-                    onSwitchUser={handleSwitchUser}
                     onLogout={handleLogout}
                     onProfileUpdated={(updated) => {
                       setCurrentUser(updated);
