@@ -143,4 +143,8 @@ export class DatabaseRepository {
   static async reactToMessage(messageId: string, userId: string, emoji: string): Promise<Record<string, string[]>> {
     return fileDb.reactToMessage(messageId, userId, emoji);
   }
+
+  static async deleteMessage(messageId: string, requestingUserId: string): Promise<{ success: boolean; chatId?: string; error?: string }> {
+    return fileDb.deleteMessage(messageId, requestingUserId);
+  }
 }

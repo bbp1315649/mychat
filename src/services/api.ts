@@ -105,9 +105,11 @@ export const api = {
     return data;
   },
 
-  async deleteUser(userId: string): Promise<void> {
+  async deleteUser(userId: string, requestingUserId?: string): Promise<void> {
     await safeFetchJson(`${API_BASE}/admin/users/${userId}`, {
       method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requestingUserId }),
     });
   },
 
@@ -200,6 +202,14 @@ export const api = {
       body: JSON.stringify({ userId, emoji }),
     });
     return data.reactions;
+  },
+
+  async deleteMessage(messageId: string, userId: string): Promise<void> {
+    await safeFetchJson<{ success: boolean }>(`${API_BASE}/messages/${messageId}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId }),
+    });
   },
 };
 

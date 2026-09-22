@@ -175,21 +175,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
-  // Principal deletes a user / cancels registration from school database
-  // Requirement: "مدیر قابلیت حذف افراد از ثبت نام ... را داشته باشد"
-  const handleDeleteUser = async (userId: string, fullName: string) => {
-    if (!window.confirm(`آیا از حذف کامل «${fullName}» از سامانه و لغو ثبت‌نام اطمینان دارید؟ تمام دسترسی‌ها و حساب کاربری وی حذف خواهد شد.`)) {
-      return;
-    }
+  // User deletion state for in-app confirmation modal
+  const [userToDelete, setUserToDelete] = useState<{ id: string; fullName: string } | null>(null);
+  const [isDeletingUser, setIsDeletingUser] = useState(false);
 
+  // Principal deletes a user / cancels registration from school database
+  // Requirement: "مدیر بتواند افراد و افراد پیش فرض رو حذف کند"
+  const handleConfirmDeleteUser = async () => {
+    if (!userToDelete) return;
+    setIsDeletingUser(true);
     try {
-      await api.deleteUser(userId);
-      setPasswordNotice(`کاربر «${fullName}» با موفقیت از سامانه آموزشگاه حذف شد.`);
+      await api.deleteUser(userToDelete.id, currentUser.id);
+      setPasswordNotice(`کاربر «${userToDelete.fullName}» با موفقیت از سامانه آموزشگاه حذف شد.`);
+      setUserToDelete(null);
       onRefreshUsers();
       onRefreshGroups();
       setTimeout(() => setPasswordNotice(null), 4000);
     } catch (err: any) {
-      alert(err.message || 'خطا در حذف کاربر');
+      setPasswordNotice(err.message || 'خطا در حذف کاربر');
+    } finally {
+      setIsDeletingUser(false);
     }
   };
 
@@ -444,17 +449,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       </div>
                     )}
 
-                    {/* Admin delete staff / revoke registration */}
-                    {!isUserPrincipal && (
+                    {/* Admin delete staff / revoke registration (including default users) */}
+                    {u.id !== currentUser.id && (
                       <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between">
                         <span className="text-[10px] text-slate-500">مدیریت حساب و عضویت:</span>
                         <button
-                          onClick={() => handleDeleteUser(u.id, u.fullName)}
+                          type="button"
+                          onClick={() => setUserToDelete({ id: u.id, fullName: u.fullName })}
                           className="px-2.5 py-1 text-[10px] text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-lg flex items-center gap-1 transition-all"
-                          title="حذف این کاربر از ثبت‌نام و پایگاه داده مدرسه"
+                          title="حذف این کاربر از سامانه و پایگاه داده مدرسه"
                         >
                           <Trash2 className="w-3 h-3" />
-                          <span>حذف کاربر از ثبت‌نام و مدرسه</span>
+                          <span>حذف کاربر از سامانه و مدرسه</span>
                         </button>
                       </div>
                     )}
@@ -820,6 +826,45 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               {addStaffLoading ? 'در حال ثبت همکار...' : 'ثبت همکار در سامانه'}
             </button>
           </form>
+        )}
+
+        {/* Modal for User Deletion Confirmation (No window.confirm, safe for all iframes) */}
+        {userToDelete && (
+          <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 max-w-sm w-full shadow-2xl text-center space-y-4 animate-in fade-in zoom-in-95 duration-150">
+              <div className="w-12 h-12 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center mx-auto text-rose-400">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-slate-100">تأیید حذف همکار از سامانه</h3>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  آیا از حذف کامل «<span className="font-bold text-slate-200">{userToDelete.fullName}</span>» از پایگاه داده و سامانه مدرسه اطمینان دارید؟
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  تمامی گفتگوهای دوطرفه، دسترسی‌ها و عضویت‌های این کاربر حذف خواهند شد.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={handleConfirmDeleteUser}
+                  disabled={isDeletingUser}
+                  className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-rose-600/20 transition-all disabled:opacity-50"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{isDeletingUser ? 'در حال حذف...' : 'تأیید و حذف نهایی'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUserToDelete(null)}
+                  disabled={isDeletingUser}
+                  className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition-colors"
+                >
+                  انصراف
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

@@ -101,6 +101,10 @@ export default function App() {
       });
     });
 
+    const unsubMsgDeleted = realtime.on('message:deleted', ({ messageId }: { messageId: string; chatId: string }) => {
+      setMessages(prev => prev.filter(m => m.id !== messageId));
+    });
+
     const unsubPin = realtime.on('message:pinned', ({ messageId, isPinned }: { messageId: string; isPinned: boolean }) => {
       setMessages(prev => prev.map(m => m.id === messageId ? { ...m, isPinned } : m));
     });
@@ -192,6 +196,7 @@ export default function App() {
 
     return () => {
       unsubMsg();
+      unsubMsgDeleted();
       unsubPin();
       unsubReaction();
       unsubGroupCreated();
@@ -292,6 +297,24 @@ export default function App() {
     }
   };
 
+  // Delete message (sender or principal)
+  // Requirement: "افراد بتوانند پیام های ارسالی خود را حذف کنند . مدیر نیز بتواند پیام افراد را حذف کند"
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!currentUser) return;
+    try {
+      // Optimistic update
+      setMessages(prev => prev.filter(m => m.id !== messageId));
+      await api.deleteMessage(messageId, currentUser.id);
+    } catch (err: any) {
+      console.error('Failed to delete message:', err);
+      // Reload on failure if chat is active
+      if (activeChat) {
+        const msgs = await api.getMessages(activeChat.id);
+        setMessages(msgs);
+      }
+    }
+  };
+
   // Group Created Callback
   const handleGroupCreated = (newGroup: Group) => {
     setGroups(prev => [...prev, newGroup]);
@@ -356,6 +379,7 @@ export default function App() {
                 })}
                 onPinMessage={handlePinMessage}
                 onReactMessage={handleReactMessage}
+                onDeleteMessage={handleDeleteMessage}
                 onRefreshGroups={() => loadData(currentUser || undefined)}
               />
             ) : (
@@ -383,6 +407,7 @@ export default function App() {
                     users={users}
                     currentUser={currentUser}
                     onSelectUserForChat={handleSelectDirectUser}
+                    onUserDeleted={() => loadData(currentUser || undefined)}
                   />
                 )}
 

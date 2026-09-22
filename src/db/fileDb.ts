@@ -397,8 +397,6 @@ class FileDatabaseEngine {
   public deleteUser(userId: string): boolean {
     const u = this.data.users.find(user => user.id === userId);
     if (!u) return false;
-    // Security: Principal account cannot be deleted
-    if (u.role === 'principal') return false;
 
     // Remove user record
     this.data.users = this.data.users.filter(user => user.id !== userId);
@@ -406,6 +404,10 @@ class FileDatabaseEngine {
     this.data.groupMembers = this.data.groupMembers.filter(m => m.userId !== userId);
     // Remove user's reactions
     this.data.reactions = this.data.reactions.filter(r => r.userId !== userId);
+    // Clean up direct messages involving this user
+    this.data.messages = this.data.messages.filter(
+      m => !(m.chatId.startsWith('direct_') && m.chatId.includes(userId))
+    );
 
     this.save();
     return true;
@@ -713,6 +715,34 @@ class FileDatabaseEngine {
       reactions[r.emoji].push(r.userId);
     }
     return reactions;
+  }
+
+  public deleteMessage(messageId: string, requestingUserId: string): { success: boolean; chatId?: string; error?: string } {
+    const msgIdx = this.data.messages.findIndex(m => m.id === messageId);
+    if (msgIdx === -1) {
+      return { success: false, error: 'پیام مورد نظر یافت نشد' };
+    }
+    const msg = this.data.messages[msgIdx];
+    const requestingUser = this.data.users.find(u => u.id === requestingUserId);
+    if (!requestingUser) {
+      return { success: false, error: 'کاربر ارسال‌کننده درخواست نامعتبر است' };
+    }
+
+    const isSender = msg.senderId === requestingUserId;
+    const isPrincipal = requestingUser.role === 'principal';
+
+    if (!isSender && !isPrincipal) {
+      return { success: false, error: 'تنها ارسال‌کننده پیام یا مدیر آموزشگاه مجاز به حذف این پیام هستند' };
+    }
+
+    const chatId = msg.chatId;
+    // Remove reactions for this message
+    this.data.reactions = this.data.reactions.filter(r => r.messageId !== messageId);
+    // Remove the message
+    this.data.messages.splice(msgIdx, 1);
+    this.save();
+
+    return { success: true, chatId };
   }
 }
 

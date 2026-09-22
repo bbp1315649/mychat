@@ -188,10 +188,11 @@ app.post(['/api/admin/users/:userId/password', '/api/users/:userId/password'], a
 });
 
 // 4.5. Principal deletes user / cancels staff registration
-// Requirement: "مدیر قابلیت حذف افراد از ثبت نام و از گروه را داشته باشد"
+// Requirement: "مدیر بتواند افراد و افراد پیش فرض رو حذف کند"
 app.delete(['/api/admin/users/:userId', '/api/users/:userId'], async (req, res) => {
   try {
     const { userId } = req.params;
+    const requestingUserId = (req.body?.requestingUserId || req.query?.requestingUserId || req.headers['x-user-id']) as string;
     const allUsers = await DatabaseRepository.getAllUsers();
     const target = allUsers.find(u => u.id === userId);
 
@@ -199,8 +200,8 @@ app.delete(['/api/admin/users/:userId', '/api/users/:userId'], async (req, res) 
       return res.status(404).json({ error: 'کاربر مورد نظر در سامانه یافت نشد' });
     }
 
-    if (target.role === 'principal') {
-      return res.status(403).json({ error: 'حساب کاربری مدیر آموزشگاه قابل حذف نمی‌باشد' });
+    if (requestingUserId && target.id === requestingUserId) {
+      return res.status(403).json({ error: 'امکان حذف حساب کاربری جاری خودتان وجود ندارد' });
     }
 
     const success = await DatabaseRepository.deleteUser(userId);
@@ -209,7 +210,7 @@ app.delete(['/api/admin/users/:userId', '/api/users/:userId'], async (req, res) 
     }
 
     broadcast('user:deleted', { userId });
-    res.json({ success: true, userId, message: `کاربر «${target.fullName}» با موفقیت حذف شد` });
+    res.json({ success: true, userId, message: `کاربر «${target.fullName}» با موفقیت از سامانه حذف شد` });
   } catch (error: any) {
     console.error('Delete user error:', error);
     res.status(500).json({ error: 'خطا در حذف کاربر از سامانه' });
@@ -439,6 +440,29 @@ app.post('/api/messages/:id/react', async (req, res) => {
   } catch (error: any) {
     console.error('Reaction error:', error);
     res.status(500).json({ error: 'خطا در ثبت واکنش' });
+  }
+});
+
+// 11.5. Delete message (User can delete own sent message, Principal can delete any message)
+// Requirement: "افراد بتوانند پیام های ارسالی خود را حذف کنند . مدیر نیز بتواند پیام افراد را حذف کند"
+app.delete('/api/messages/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const requestingUserId = (req.body?.userId || req.query?.userId || req.headers['x-user-id']) as string;
+    if (!requestingUserId) {
+      return res.status(400).json({ error: 'شناسه کاربر ارسال‌کننده درخواست الزامی است' });
+    }
+
+    const result = await DatabaseRepository.deleteMessage(id, requestingUserId);
+    if (!result.success) {
+      return res.status(403).json({ error: result.error || 'دسترسی غیرمجاز برای حذف پیام' });
+    }
+
+    broadcast('message:deleted', { messageId: id, chatId: result.chatId });
+    res.json({ success: true, messageId: id, chatId: result.chatId });
+  } catch (error: any) {
+    console.error('Delete message error:', error);
+    res.status(500).json({ error: 'خطا در حذف پیام' });
   }
 });
 
