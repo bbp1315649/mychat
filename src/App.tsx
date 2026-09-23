@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { User, Group, Message } from './types';
 import { api, realtime } from './services/api';
 import { MobileFrame } from './components/MobileFrame';
@@ -28,6 +28,15 @@ export default function App() {
   } | null>(null);
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
   const [loadingInitial, setLoadingInitial] = useState(true);
+  const [logoutStep, setLogoutStep] = useState<number>(0);
+  const [logoutNotice, setLogoutNotice] = useState<string | null>(null);
+  const logoutTimeoutRef = useRef<any>(null);
+
+  useEffect(() => {
+    return () => {
+      if (logoutTimeoutRef.current) clearTimeout(logoutTimeoutRef.current);
+    };
+  }, []);
 
   // Load initial users and groups
   const loadData = async (userObj?: User) => {
@@ -223,11 +232,31 @@ export default function App() {
     setActiveChat(null);
   };
 
-  // Logout
+  // Logout with double-tap protection
+  // Requirement: "برای خروج تا دوبار پشت سرهم دکمه خروج زده نشه از صفحه برنامه خارج نشود"
   const handleLogout = () => {
-    setCurrentUser(null);
-    localStorage.removeItem('school_chat_active_user');
-    setActiveChat(null);
+    if (logoutStep === 1) {
+      if (logoutTimeoutRef.current) {
+        clearTimeout(logoutTimeoutRef.current);
+        logoutTimeoutRef.current = null;
+      }
+      setLogoutStep(0);
+      setLogoutNotice(null);
+      setCurrentUser(null);
+      localStorage.removeItem('school_chat_active_user');
+      setActiveChat(null);
+    } else {
+      setLogoutStep(1);
+      setLogoutNotice('جهت خروج از سامانه، یک بار دیگر دکمه خروج را لمس کنید');
+      if (logoutTimeoutRef.current) {
+        clearTimeout(logoutTimeoutRef.current);
+      }
+      logoutTimeoutRef.current = setTimeout(() => {
+        setLogoutStep(0);
+        setLogoutNotice(null);
+        logoutTimeoutRef.current = null;
+      }, 3500);
+    }
   };
 
   // Select Group
@@ -346,6 +375,14 @@ export default function App() {
         <AuthModal onSuccess={handleAuthSuccess} />
       ) : (
         <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+          {/* Double-tap Logout Confirmation Toast */}
+          {logoutNotice && (
+            <div className="fixed top-12 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-rose-950/95 border border-rose-500/80 text-rose-200 text-xs font-bold rounded-2xl shadow-2xl flex items-center gap-2 backdrop-blur-md animate-in fade-in slide-in-from-top-3 duration-200 pointer-events-none">
+              <div className="w-2 h-2 rounded-full bg-rose-400 animate-ping shrink-0" />
+              <span>{logoutNotice}</span>
+            </div>
+          )}
+
           {/* Top Info Bar */}
           <div className="bg-slate-900/95 border-b border-slate-800 px-3 py-1.5 flex items-center justify-between text-[11px] shrink-0">
             <div className="flex items-center gap-1.5 text-slate-300">
@@ -363,14 +400,25 @@ export default function App() {
               )}
             </div>
 
-            <button
-              onClick={handleLogout}
-              className="text-[11px] text-rose-400 hover:text-rose-300 flex items-center gap-1 bg-rose-500/10 hover:bg-rose-500/20 px-2 py-1 rounded-lg border border-rose-500/30 transition-colors"
-              title="خروج از حساب کاربری فعلی"
-            >
-              <LogOut className="w-3 h-3" />
-              <span>خروج</span>
-            </button>
+            <div className="flex items-center gap-2">
+              {logoutStep === 1 && (
+                <span className="text-[10px] text-rose-300 font-semibold animate-pulse hidden sm:inline-block">
+                  برای خروج دوباره کلیک کنید
+                </span>
+              )}
+              <button
+                onClick={handleLogout}
+                className={`text-[11px] flex items-center gap-1.5 px-2.5 py-1 rounded-lg border transition-all ${
+                  logoutStep === 1
+                    ? 'bg-rose-600 hover:bg-rose-500 text-white border-rose-400 font-bold animate-pulse shadow-md shadow-rose-600/30'
+                    : 'text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border-rose-500/30'
+                }`}
+                title={logoutStep === 1 ? 'تایید خروج (کلیک مجدد)' : 'خروج از حساب کاربری فعلی'}
+              >
+                <LogOut className={`w-3 h-3 ${logoutStep === 1 ? 'text-white' : 'text-rose-400'}`} />
+                <span>{logoutStep === 1 ? 'تایید خروج (کلیک مجدد)' : 'خروج'}</span>
+              </button>
+            </div>
           </div>
 
           {/* Main Viewport */}
@@ -461,6 +509,7 @@ export default function App() {
                   <UserProfile
                     currentUser={currentUser}
                     onLogout={handleLogout}
+                    logoutStep={logoutStep}
                     onProfileUpdated={(updated) => {
                       setCurrentUser(updated);
                       setUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
