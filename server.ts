@@ -4,7 +4,20 @@ import path from 'path';
 import fs from 'fs';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer as createViteServer } from 'vite';
+import { GoogleGenAI } from '@google/genai';
 import { DatabaseRepository } from './src/db/repository';
+
+// Initialize Gemini client according to gemini-api guidelines
+const ai = process.env.GEMINI_API_KEY
+  ? new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    })
+  : null;
 
 // Prevent unhandled errors from terminating the process
 process.on('uncaughtException', (err) => {
@@ -508,6 +521,139 @@ app.delete(['/api/admin/groups/:groupId', '/api/groups/:groupId'], async (req, r
   } catch (error: any) {
     console.error('Delete group error:', error);
     res.status(500).json({ error: 'خطا در حذف گروه' });
+  }
+});
+
+// Helper for decoding HTML entities from translation APIs
+function decodeHtmlEntities(str: string): string {
+  return str
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)));
+}
+
+// 13. Persian <-> English live translator endpoint
+app.post('/api/translate', async (req, res) => {
+  try {
+    const { text, targetLang, sourceLang } = req.body;
+    if (!text || typeof text !== 'string' || !text.trim()) {
+      return res.json({ success: true, translatedText: '', originalText: '' });
+    }
+
+    const cleanInput = text.trim();
+    // Auto-detect direction if not explicitly supplied
+    const hasPersian = /[\u0600-\u06FF]/.test(cleanInput);
+    const resolvedTarget = targetLang || (hasPersian ? 'en' : 'fa');
+    const resolvedSource = sourceLang || (resolvedTarget === 'en' ? 'fa' : 'en');
+
+    // 1. Primary: Gemini 3.8 Flash model
+    if (ai) {
+      try {
+        const prompt = resolvedTarget === 'en'
+          ? `Translate the following Persian text accurately into natural, polite, and fluent English. Suitable for Iranian schools, teachers, and educational staff communications. Return ONLY the translated English text with no quotes, markdown formatting, or notes:\n\n${cleanInput}`
+          : `Translate the following English text accurately into natural, polite, and formal Persian (Farsi) suitable for Iranian school communications and teachers. Return ONLY the translated Persian text with no quotes, markdown formatting, or notes:\n\n${cleanInput}`;
+
+        const geminiPromise = ai.models.generateContent({
+          model: 'gemini-3.8-flash',
+          contents: prompt,
+        });
+
+        // Timeout race to prevent waiting if Gemini is busy
+        const timeoutPromise = new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error('Gemini timeout')), 4500)
+        );
+
+        const response: any = await Promise.race([geminiPromise, timeoutPromise]);
+        const resultText = response.text ? response.text.trim().replace(/^["']|["']$/g, '') : '';
+
+        if (resultText) {
+          return res.json({
+            success: true,
+            originalText: cleanInput,
+            translatedText: resultText,
+            sourceLang: resolvedSource,
+            targetLang: resolvedTarget,
+            engine: 'gemini',
+          });
+        }
+      } catch (geminiError: any) {
+        console.warn('Gemini translation temporarily unavailable, using fallback:', geminiError.message || geminiError);
+      }
+    }
+
+    // 2. Secondary: Fast cloud translation service (MyMemory)
+    try {
+      const langpair = `${resolvedSource}|${resolvedTarget}`;
+      const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(cleanInput)}&langpair=${langpair}`;
+      const fetchRes = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      if (fetchRes.ok) {
+        const json: any = await fetchRes.json();
+        let candidate = '';
+        if (json.matches && Array.isArray(json.matches)) {
+          const best = json.matches.find((m: any) => m.quality >= 50 && !m.translation.startsWith('['));
+          if (best && best.translation) candidate = best.translation;
+        }
+        if (!candidate && json.responseData?.translatedText) {
+          candidate = json.responseData.translatedText.replace(/\[.*?\]\s*/g, '');
+        }
+
+        if (candidate) {
+          const decoded = decodeHtmlEntities(candidate.trim());
+          return res.json({
+            success: true,
+            originalText: cleanInput,
+            translatedText: decoded,
+            sourceLang: resolvedSource,
+            targetLang: resolvedTarget,
+            engine: 'service',
+          });
+        }
+      }
+    } catch (fallbackError: any) {
+      console.warn('Fallback translation error:', fallbackError.message || fallbackError);
+    }
+
+    // 3. Fallback dictionary for common school/teacher phrases
+    const fallbackDict: Record<string, string> = {
+      'سلام': 'Hello',
+      'سلام و خسته نباشید': 'Hello and more power to you',
+      'خسته نباشید': 'Good work / More power to you',
+      'صبح بخیر': 'Good morning',
+      'عصر بخیر': 'Good afternoon',
+      'شب بخیر': 'Good evening',
+      'جلسه شورای دبیران': "Teachers' Council Meeting",
+      'جلسه شورای معلمان': "Teachers' Council Meeting",
+      'تکالیف دانش‌آموزان': "Students' homework",
+      'لطفاً تکالیف را ارسال فرمایید': 'Please submit the homework assignments',
+      'حضور و غیاب دانش‌آموزان': 'Student attendance',
+      'کارنامه تحصیلی': 'Academic report card',
+      'نمرات آزمون مستمر': 'Continuous assessment scores',
+      'آزمون نوبت اول': 'First term exam',
+      'آزمون نوبت دوم': 'Second term exam',
+      'با تشکر و احترام': 'With thanks and respect',
+      'موفق و پیروز باشید': 'Wishing you great success',
+    };
+
+    let dictMatch = fallbackDict[cleanInput];
+    if (!dictMatch && resolvedTarget === 'fa') {
+      const rev = Object.entries(fallbackDict).find(([k, v]) => v.toLowerCase() === cleanInput.toLowerCase());
+      if (rev) dictMatch = rev[0];
+    }
+
+    res.json({
+      success: true,
+      originalText: cleanInput,
+      translatedText: dictMatch || cleanInput,
+      sourceLang: resolvedSource,
+      targetLang: resolvedTarget,
+      engine: 'dictionary',
+    });
+  } catch (error: any) {
+    console.error('Translation endpoint error:', error);
+    res.status(500).json({ error: 'خطا در ترجمه متن' });
   }
 });
 

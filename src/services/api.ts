@@ -212,6 +212,29 @@ export const api = {
       body: JSON.stringify({ userId }),
     });
   },
+
+  async translate(text: string, targetLang: 'en' | 'fa' = 'en', sourceLang?: 'en' | 'fa'): Promise<{
+    success: boolean;
+    originalText: string;
+    translatedText: string;
+    sourceLang: string;
+    targetLang: string;
+    engine?: string;
+  }> {
+    const data = await safeFetchJson<{
+      success: boolean;
+      originalText: string;
+      translatedText: string;
+      sourceLang: string;
+      targetLang: string;
+      engine?: string;
+    }>(`${API_BASE}/translate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, targetLang, sourceLang }),
+    });
+    return data;
+  },
 };
 
 // Real-time WebSocket manager

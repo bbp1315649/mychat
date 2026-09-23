@@ -28,7 +28,12 @@ import {
   Trash2,
   Loader2,
   Video,
-  Film
+  Film,
+  Languages,
+  ArrowLeftRight,
+  Copy,
+  CheckCircle2,
+  RotateCcw
 } from 'lucide-react';
 import { CameraCaptureModal } from './CameraCaptureModal';
 import { ImageLightboxModal } from './ImageLightboxModal';
@@ -84,6 +89,94 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
   const [showCameraModal, setShowCameraModal] = useState(false);
   const [deleteConfirmMsg, setDeleteConfirmMsg] = useState<Message | null>(null);
   const [isDeletingMsg, setIsDeletingMsg] = useState(false);
+
+  // Persian <-> English Translator State for typing box and messages
+  const [showTranslator, setShowTranslator] = useState(false);
+  const [translateTargetLang, setTranslateTargetLang] = useState<'en' | 'fa'>('en');
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [translationResult, setTranslationResult] = useState<{
+    original: string;
+    translated: string;
+    targetLang: string;
+  } | null>(null);
+  const [previousPersianText, setPreviousPersianText] = useState<string | null>(null);
+  const [copiedTranslation, setCopiedTranslation] = useState(false);
+  const [messageTranslations, setMessageTranslations] = useState<Record<string, { translated: string; loading?: boolean }>>({});
+
+  const handleTranslateInput = async (textToTranslate?: string, targetOverride?: 'en' | 'fa') => {
+    const raw = textToTranslate !== undefined ? textToTranslate : inputText;
+    if (!raw.trim()) return;
+
+    const target = targetOverride || translateTargetLang;
+    setIsTranslating(true);
+    try {
+      const res = await api.translate(raw.trim(), target);
+      setTranslationResult({
+        original: raw.trim(),
+        translated: res.translatedText,
+        targetLang: res.targetLang,
+      });
+    } catch (err: any) {
+      console.warn('Translation error:', err);
+    } finally {
+      setIsTranslating(false);
+    }
+  };
+
+  const handleQuickTranslate = async () => {
+    if (!inputText.trim()) return;
+    setIsTranslating(true);
+    try {
+      const hasPersian = /[\u0600-\u06FF]/.test(inputText);
+      const target = hasPersian ? 'en' : 'fa';
+      const original = inputText;
+      const res = await api.translate(original.trim(), target);
+      setPreviousPersianText(original);
+      setInputText(res.translatedText);
+      setTranslationResult({
+        original,
+        translated: res.translatedText,
+        targetLang: target,
+      });
+    } catch (err: any) {
+      console.warn('Quick translate error:', err);
+    } finally {
+      setIsTranslating(false);
+    }
+  };
+
+  const handleTranslateMessage = async (msgId: string, content: string) => {
+    if (messageTranslations[msgId]?.translated) {
+      // Toggle off if already showing
+      setMessageTranslations(prev => {
+        const next = { ...prev };
+        delete next[msgId];
+        return next;
+      });
+      return;
+    }
+
+    setMessageTranslations(prev => ({
+      ...prev,
+      [msgId]: { translated: '', loading: true },
+    }));
+
+    try {
+      const hasPersian = /[\u0600-\u06FF]/.test(content);
+      const target = hasPersian ? 'en' : 'fa';
+      const res = await api.translate(content, target);
+      setMessageTranslations(prev => ({
+        ...prev,
+        [msgId]: { translated: res.translatedText, loading: false },
+      }));
+    } catch (err) {
+      setMessageTranslations(prev => {
+        const next = { ...prev };
+        delete next[msgId];
+        return next;
+      });
+    }
+  };
 
   // Handle message deletion
   // Requirement: "افراد بتوانند پیام های ارسالی خود را حذف کنند . مدیر نیز بتواند پیام افراد را حذف کند"
@@ -649,6 +742,37 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                     )
                   )}
 
+                  {/* Optional Message Translation Card */}
+                  {messageTranslations[msg.id]?.loading && (
+                    <div className="mt-2 pt-1.5 border-t border-white/10 text-[10px] text-indigo-300 flex items-center gap-1.5 animate-pulse">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <span>در حال ترجمه متن...</span>
+                    </div>
+                  )}
+                  {messageTranslations[msg.id]?.translated && (
+                    <div className="mt-2 pt-1.5 border-t border-white/15 text-xs text-indigo-100 bg-black/25 p-2 rounded-xl border border-indigo-400/20" dir="ltr">
+                      <div className="text-[9px] text-indigo-300 font-bold mb-0.5 flex items-center justify-between">
+                        <span className="flex items-center gap-1">
+                          <Languages className="w-3 h-3 text-indigo-400" />
+                          <span>Translation:</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(messageTranslations[msg.id].translated);
+                          }}
+                          className="hover:text-white p-0.5"
+                          title="کپی ترجمه"
+                        >
+                          <Copy className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                      <div className="font-sans text-[11px] leading-relaxed select-text font-normal text-slate-100">
+                        {messageTranslations[msg.id].translated}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Footer: Time, Pin icon, Read status */}
                   <div className={`flex items-center justify-end gap-1 mt-1 text-[10px] ${
                     isMedia ? 'px-1.5 pb-0.5' : ''
@@ -699,6 +823,21 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                   >
                     <Reply className="w-3 h-3" />
                   </button>
+
+                  {/* Translation action button for text messages */}
+                  {msg.content && msg.type !== 'voice' && !isSticker && (
+                    <button
+                      onClick={() => handleTranslateMessage(msg.id, msg.content)}
+                      className={`p-1 rounded transition-colors ${
+                        messageTranslations[msg.id]
+                          ? 'text-indigo-400 bg-indigo-500/20'
+                          : 'hover:text-indigo-300 hover:bg-slate-800'
+                      }`}
+                      title="ترجمه متن پیام به انگلیسی یا فارسی"
+                    >
+                      <Languages className="w-3 h-3" />
+                    </button>
+                  )}
 
                   <button
                     onClick={() => setShowReactionPickerForId(showReactionPickerForId === msg.id ? null : msg.id)}
@@ -949,6 +1088,159 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
         </div>
       )}
 
+      {/* Persian <-> English Translator Drawer */}
+      {showTranslator && (
+        <div className="bg-slate-900 border-t border-indigo-500/40 p-3 max-h-80 overflow-y-auto space-y-2.5 z-20 shadow-xl backdrop-blur-md">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-lg bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+                <Languages className="w-3.5 h-3.5" />
+              </div>
+              <span className="text-xs font-bold text-slate-100">مترجم هوشمند فارسی ⇄ انگلیسی کادر تایپ</span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  const nextLang = translateTargetLang === 'en' ? 'fa' : 'en';
+                  setTranslateTargetLang(nextLang);
+                  if (inputText.trim()) {
+                    handleTranslateInput(inputText.trim(), nextLang);
+                  }
+                }}
+                className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-200 border border-slate-700 flex items-center gap-1 transition-colors"
+                title="تغییر جهت ترجمه"
+              >
+                <ArrowLeftRight className="w-3 h-3 text-indigo-400" />
+                <span>{translateTargetLang === 'en' ? 'فارسی به انگلیسی' : 'انگلیسی به فارسی'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowTranslator(false)}
+                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Current Translation Preview & Actions */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-[11px] text-slate-400">
+              <span>متن در حال ترجمه:</span>
+              <button
+                type="button"
+                onClick={() => handleTranslateInput(inputText)}
+                disabled={!inputText.trim() || isTranslating}
+                className="text-xs text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-1 disabled:opacity-40"
+              >
+                {isTranslating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Languages className="w-3 h-3" />}
+                <span>{isTranslating ? 'در حال ترجمه...' : 'ترجمه متن فعلی'}</span>
+              </button>
+            </div>
+
+            {translationResult ? (
+              <div className="p-2.5 rounded-xl bg-slate-950/80 border border-indigo-500/30 space-y-2 shadow-inner">
+                <div className="text-[10px] text-slate-400 flex items-center justify-between">
+                  <span>نتیجه ترجمه ({translationResult.targetLang === 'en' ? 'انگلیسی' : 'فارسی'}):</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(translationResult.translated);
+                      setCopiedTranslation(true);
+                      setTimeout(() => setCopiedTranslation(false), 2000);
+                    }}
+                    className="px-1.5 py-0.5 rounded hover:bg-slate-800 text-slate-400 hover:text-slate-200 flex items-center gap-1 text-[10px]"
+                    title="کپی ترجمه"
+                  >
+                    {copiedTranslation ? <CheckCircle2 className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    <span>{copiedTranslation ? 'کپی شد' : 'کپی'}</span>
+                  </button>
+                </div>
+
+                <div
+                  className={`text-xs p-2 rounded-lg bg-slate-900 border border-slate-800 text-slate-100 select-all font-sans leading-relaxed ${
+                    translationResult.targetLang === 'en' ? 'text-left font-mono' : 'text-right'
+                  }`}
+                  dir={translationResult.targetLang === 'en' ? 'ltr' : 'rtl'}
+                >
+                  {translationResult.translated}
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPreviousPersianText(inputText);
+                      setInputText(translationResult.translated);
+                    }}
+                    className="flex-1 py-1.5 px-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition-colors shadow-sm flex items-center justify-center gap-1"
+                  >
+                    <span>جایگزینی در کادر تایپ</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInputText(prev => prev.trim() ? `${prev}\n${translationResult.translated}` : translationResult.translated);
+                    }}
+                    className="py-1.5 px-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1 border border-slate-700"
+                    title="ارسال دو زبانه (افزودن ترجمه به انتهای متن)"
+                  >
+                    <span>+ افزودن به متن</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800 text-center text-xs text-slate-400">
+                متن پیام خود را در کادر پایین بنویسید یا یکی از عبارات پرکاربرد کادر زیر را انتخاب کنید:
+              </div>
+            )}
+          </div>
+
+          {/* Quick Ready School Phrases */}
+          <div className="space-y-1.5 pt-1">
+            <div className="text-[10px] font-semibold text-slate-400 flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-amber-400" />
+              <span>جملات کاربردی کادر آموزشی مدرسه (با ترجمه آنی):</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-36 overflow-y-auto p-0.5">
+              {[
+                { fa: 'لطفاً تکالیف جلسه قبل را ارسال فرمایید.', en: "Please submit last session's homework assignments." },
+                { fa: 'جلسه شورای دبیران فردا ساعت ۱۰ برگزار می‌شود.', en: "The teachers' council meeting will be held tomorrow at 10 AM." },
+                { fa: 'نمرات آزمون مستمر در سامانه ثبت گردید.', en: 'Continuous assessment exam scores have been recorded in the system.' },
+                { fa: 'حضور و غیاب دانش‌آموزان به دقت ثبت شد.', en: 'Student attendance has been recorded accurately.' },
+                { fa: 'خسته نباشید و خدا قوت به همه همکاران گرامی.', en: 'Well done and more power to all esteemed colleagues.' },
+                { fa: 'لطفاً گزارش ماهانه کلاس خود را تحویل دهید.', en: 'Please submit your monthly classroom report.' }
+              ].map((item, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => {
+                    if (translateTargetLang === 'en') {
+                      setInputText(item.en);
+                      setPreviousPersianText(item.fa);
+                      setTranslationResult({ original: item.fa, translated: item.en, targetLang: 'en' });
+                    } else {
+                      setInputText(item.fa);
+                      setTranslationResult({ original: item.en, translated: item.fa, targetLang: 'fa' });
+                    }
+                  }}
+                  className="text-[11px] p-2 rounded-xl bg-slate-950 hover:bg-indigo-950/40 border border-slate-800 hover:border-indigo-500/40 text-slate-300 hover:text-indigo-200 transition-all text-right flex flex-col gap-0.5"
+                  title="کلیک برای درج ترجمه انگلیسی"
+                >
+                  <span className="font-medium truncate">{item.fa}</span>
+                  <span className="text-[10px] text-indigo-400/80 font-mono truncate" dir="ltr">{item.en}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Bottom Message Input Bar */}
       <div className="p-2.5 bg-slate-900 border-t border-slate-800 shrink-0 z-10">
         {!canSend ? (
@@ -957,84 +1249,164 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
             <span>در این کانال فقط مدیر و معاونین مدرسه مجاز به ارسال پیام هستند.</span>
           </div>
         ) : (
-          <form onSubmit={handleSend} className="flex items-center gap-1.5">
-            {/* Attachments Toggle */}
-            <button
-              type="button"
-              onClick={() => setShowAttachMenu(!showAttachMenu)}
-              className={`p-2 rounded-xl border transition-all ${
-                showAttachMenu
-                  ? 'bg-blue-600 text-white border-blue-500'
-                  : 'bg-slate-950 hover:bg-slate-850 text-slate-400 border-slate-800'
-              }`}
-              title="پیوست بخشنامه، فایل یا گزارش"
-            >
-              <Paperclip className="w-4 h-4" />
-            </button>
+          <div>
+            {/* Quick Live Translate Chip Bar when typing */}
+            {inputText.trim().length > 0 && (
+              <div className="flex items-center justify-between pb-1.5 px-0.5 text-[11px]">
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={handleQuickTranslate}
+                    disabled={isTranslating}
+                    className="px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-indigo-300 font-semibold flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 text-[11px]"
+                    title="ترجمه فوری کلمات تایپ شده به انگلیسی"
+                  >
+                    {isTranslating ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
+                    ) : (
+                      <Languages className="w-3.5 h-3.5 text-indigo-400" />
+                    )}
+                    <span>ترجمه به انگلیسی</span>
+                  </button>
 
-            {/* Direct Camera / Video Button */}
-            <button
-              type="button"
-              onClick={() => {
-                setCameraModalMode('photo');
-                setShowCameraModal(true);
-              }}
-              className="p-2 bg-slate-950 hover:bg-slate-850 hover:text-blue-400 text-slate-400 border border-slate-800 rounded-xl transition-colors"
-              title="عکاسی و فیلم‌برداری کلاسی"
-            >
-              <Camera className="w-4 h-4" />
-            </button>
+                  {previousPersianText && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInputText(previousPersianText);
+                        setPreviousPersianText(null);
+                      }}
+                      className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1 text-[10px] transition-all"
+                      title="بازگردانی متن اولیه فارسی"
+                    >
+                      <RotateCcw className="w-2.5 h-2.5 text-slate-400" />
+                      <span>بازگردانی فارسی</span>
+                    </button>
+                  )}
+                </div>
 
-            {/* Sticker Drawer Toggle */}
-            <button
-              type="button"
-              onClick={() => {
-                setShowStickerDrawer(!showStickerDrawer);
-                setShowAttachMenu(false);
-              }}
-              className={`p-2 rounded-xl border transition-all ${
-                showStickerDrawer
-                  ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
-                  : 'bg-slate-950 hover:bg-slate-850 text-slate-400 border-slate-800'
-              }`}
-              title="استیکرها و نشان‌های تشویقی"
-            >
-              <Smile className="w-4 h-4" />
-            </button>
-
-            {/* Input field */}
-            <div className="flex-1 relative">
-              <input
-                type="text"
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                placeholder="پیام خود را بنویسید..."
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-blue-500"
-              />
-            </div>
-
-            {/* Mic / Record Voice simulation */}
-            {inputText.trim().length === 0 && (
-              <button
-                type="button"
-                onClick={startRecording}
-                className="p-2 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-xl text-slate-400 hover:text-rose-400 transition-colors"
-                title="ضبط پیام صوتی دبیر"
-              >
-                <Mic className="w-4 h-4" />
-              </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowTranslator(prev => !prev);
+                    setShowStickerDrawer(false);
+                    setShowAttachMenu(false);
+                    if (!showTranslator && inputText.trim()) {
+                      handleTranslateInput(inputText.trim());
+                    }
+                  }}
+                  className="text-indigo-400 hover:text-indigo-300 text-[10px] flex items-center gap-1 transition-colors font-medium"
+                >
+                  <Sparkles className="w-3 h-3 text-amber-400" />
+                  <span>{showTranslator ? 'بستن پنل مترجم' : 'پنل مترجم پیشرفته'}</span>
+                </button>
+              </div>
             )}
 
-            {/* Send Button (Send icon strictly pointing up-right) */}
-            <button
-              type="submit"
-              disabled={!inputText.trim()}
-              className="p-2 bg-blue-600 hover:bg-blue-500 active:scale-95 disabled:opacity-40 disabled:pointer-events-none text-white rounded-xl shadow-md shadow-blue-500/20 transition-all"
-              title="ارسال پیام"
-            >
-              <Send className="w-4 h-4" />
-            </button>
-          </form>
+            <form onSubmit={handleSend} className="flex items-center gap-1.5">
+              {/* Attachments Toggle */}
+              <button
+                type="button"
+                onClick={() => setShowAttachMenu(!showAttachMenu)}
+                className={`p-2 rounded-xl border transition-all ${
+                  showAttachMenu
+                    ? 'bg-blue-600 text-white border-blue-500'
+                    : 'bg-slate-950 hover:bg-slate-850 text-slate-400 border-slate-800'
+                }`}
+                title="پیوست بخشنامه، فایل یا گزارش"
+              >
+                <Paperclip className="w-4 h-4" />
+              </button>
+
+              {/* Direct Camera / Video Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setCameraModalMode('photo');
+                  setShowCameraModal(true);
+                }}
+                className="p-2 bg-slate-950 hover:bg-slate-850 hover:text-blue-400 text-slate-400 border border-slate-800 rounded-xl transition-colors"
+                title="عکاسی و فیلم‌برداری کلاسی"
+              >
+                <Camera className="w-4 h-4" />
+              </button>
+
+              {/* Persian <-> English Translator Toggle Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowTranslator(!showTranslator);
+                  setShowStickerDrawer(false);
+                  setShowAttachMenu(false);
+                  if (!showTranslator && inputText.trim()) {
+                    handleTranslateInput(inputText.trim());
+                  }
+                }}
+                className={`p-2 rounded-xl border transition-all flex items-center justify-center relative ${
+                  showTranslator
+                    ? 'bg-indigo-600 text-white border-indigo-500 shadow-md shadow-indigo-600/30'
+                    : 'bg-slate-950 hover:bg-slate-850 hover:text-indigo-300 text-slate-400 border-slate-800'
+                }`}
+                title="مترجم فارسی به انگلیسی در هنگام تایپ"
+              >
+                <Languages className="w-4 h-4" />
+                <span className="absolute -top-1 -right-1 text-[8px] bg-indigo-500 text-white font-mono px-1 rounded-full border border-slate-900 font-bold scale-90">
+                  EN
+                </span>
+              </button>
+
+              {/* Sticker Drawer Toggle */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowStickerDrawer(!showStickerDrawer);
+                  setShowTranslator(false);
+                  setShowAttachMenu(false);
+                }}
+                className={`p-2 rounded-xl border transition-all ${
+                  showStickerDrawer
+                    ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                    : 'bg-slate-950 hover:bg-slate-850 text-slate-400 border-slate-800'
+                }`}
+                title="استیکرها و نشان‌های تشویقی"
+              >
+                <Smile className="w-4 h-4" />
+              </button>
+
+              {/* Input field */}
+              <div className="flex-1 relative">
+                <input
+                  type="text"
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
+                  placeholder="پیام خود را بنویسید (یا ترجمه به انگلیسی)..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                />
+              </div>
+
+              {/* Mic / Record Voice */}
+              {inputText.trim().length === 0 && (
+                <button
+                  type="button"
+                  onClick={startRecording}
+                  className="p-2 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-xl text-slate-400 hover:text-rose-400 transition-colors"
+                  title="ضبط پیام صوتی دبیر"
+                >
+                  <Mic className="w-4 h-4" />
+                </button>
+              )}
+
+              {/* Send Button (Send icon strictly pointing up-right) */}
+              <button
+                type="submit"
+                disabled={!inputText.trim()}
+                className="p-2 bg-blue-600 hover:bg-blue-500 active:scale-95 disabled:opacity-40 disabled:pointer-events-none text-white rounded-xl shadow-md shadow-blue-500/20 transition-all"
+                title="ارسال پیام"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </form>
+          </div>
         )}
       </div>
 
