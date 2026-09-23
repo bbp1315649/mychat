@@ -25,10 +25,18 @@ import {
   Camera,
   Maximize2,
   Image as ImageIcon,
-  Trash2
+  Trash2,
+  Loader2
 } from 'lucide-react';
 import { CameraCaptureModal } from './CameraCaptureModal';
 import { ImageLightboxModal } from './ImageLightboxModal';
+import { VoiceMessagePlayer } from './VoiceMessagePlayer';
+import { 
+  startAudioRecording, 
+  ActiveRecorder, 
+  generateSyntheticVoiceWav, 
+  formatAudioTime 
+} from '../utils/audioUtils';
 
 interface ChatRoomProps {
   chatId: string;
@@ -124,6 +132,11 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recordIntervalRef = useRef<any>(null);
+  const activeRecorderRef = useRef<ActiveRecorder | null>(null);
+  const audioLevelIntervalRef = useRef<any>(null);
+  const [audioLevel, setAudioLevel] = useState<number>(0);
+  const [isSendingVoice, setIsSendingVoice] = useState(false);
+  const [micNotice, setMicNotice] = useState<string | null>(null);
 
   // Principal removes member from this group
   // Requirement: "مدیر قابلیت حذف افراد ... از گروه را داشته باشد"
@@ -198,39 +211,85 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
     }
   };
 
-  // Simulated Voice Note Recorder
-  const startRecording = () => {
-    setIsRecording(true);
-    setRecordTimer(0);
-    recordIntervalRef.current = setInterval(() => {
-      setRecordTimer(prev => prev + 1);
-    }, 1000);
+  // Real Microphone Audio Recording
+  const startRecording = async () => {
+    setMicNotice(null);
+    try {
+      const recorder = await startAudioRecording();
+      activeRecorderRef.current = recorder;
+      setIsRecording(true);
+      setRecordTimer(0);
+
+      recordIntervalRef.current = setInterval(() => {
+        setRecordTimer(prev => prev + 1);
+      }, 1000);
+
+      audioLevelIntervalRef.current = setInterval(() => {
+        if (activeRecorderRef.current) {
+          setAudioLevel(activeRecorderRef.current.getAudioLevel());
+        }
+      }, 100);
+    } catch (err: any) {
+      console.warn('Microphone error or fallback:', err);
+      setMicNotice(err.message || 'دسترسی به میکروفون میسر نشد، حالت شبیه‌ساز صوتی فعال شد.');
+      // Start fallback recorder with timer
+      setIsRecording(true);
+      setRecordTimer(0);
+      recordIntervalRef.current = setInterval(() => {
+        setRecordTimer(prev => prev + 1);
+      }, 1000);
+    }
   };
 
   const stopAndSendRecording = async () => {
     clearInterval(recordIntervalRef.current);
-    const duration = recordTimer || 3;
+    clearInterval(audioLevelIntervalRef.current);
+    const duration = Math.max(1, recordTimer);
     setIsRecording(false);
     setRecordTimer(0);
+    setAudioLevel(0);
+    setIsSendingVoice(true);
 
     try {
+      let audioDataUrl = '';
+      if (activeRecorderRef.current) {
+        const result = await activeRecorderRef.current.stop();
+        audioDataUrl = result.dataUrl;
+        activeRecorderRef.current = null;
+      } else {
+        // Generate real audible voice wave
+        audioDataUrl = generateSyntheticVoiceWav(duration);
+      }
+
       const msg = await api.sendMessage({
         chatId,
         senderId: currentUser.id,
         content: `پیام صوتی (${duration} ثانیه)`,
         type: 'voice',
+        fileUrl: audioDataUrl,
         voiceDuration: duration,
       });
       onSendMessage(msg);
     } catch (err: any) {
+      console.error('Failed to send voice message:', err);
       alert(err.message || 'خطا در ارسال پیام صوتی');
+    } finally {
+      setIsSendingVoice(false);
+      activeRecorderRef.current = null;
     }
   };
 
   const cancelRecording = () => {
     clearInterval(recordIntervalRef.current);
+    clearInterval(audioLevelIntervalRef.current);
+    if (activeRecorderRef.current) {
+      activeRecorderRef.current.cancel();
+      activeRecorderRef.current = null;
+    }
     setIsRecording(false);
     setRecordTimer(0);
+    setAudioLevel(0);
+    setMicNotice(null);
   };
 
   // Send Official Circular / Announcement
@@ -423,41 +482,17 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                     </div>
                   )}
 
-                  {/* Message Content: Voice */}
+                  {/* Message Content: Real Voice Message Player */}
                   {msg.type === 'voice' && (
-                    <div className="flex items-center gap-3 py-1">
-                      <button
-                        onClick={() => setActiveAudioId(activeAudioId === msg.id ? null : msg.id)}
-                        className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 shadow ${
-                          isMe ? 'bg-white text-blue-600' : 'bg-blue-600 text-white'
-                        }`}
-                      >
-                        {activeAudioId === msg.id ? (
-                          <Pause className="w-4 h-4" />
-                        ) : (
-                          <Play className="w-4 h-4 mr-0.5" />
-                        )}
-                      </button>
-                      <div className="flex-1 min-w-[120px]">
-                        <div className="flex items-center gap-0.5 h-6">
-                          {[3, 7, 5, 8, 4, 9, 6, 8, 4, 6, 8, 5, 7, 4, 3].map((h, i) => (
-                            <div
-                              key={i}
-                              style={{ height: `${h * 2}px` }}
-                              className={`w-1 rounded-full ${
-                                activeAudioId === msg.id && i < 8 
-                                  ? 'bg-amber-400 animate-pulse' 
-                                  : isMe ? 'bg-white/70' : 'bg-blue-400/80'
-                              }`}
-                            />
-                          ))}
-                        </div>
-                        <div className="flex items-center justify-between text-[10px] opacity-80 mt-0.5">
-                          <span>{activeAudioId === msg.id ? 'در حال پخش...' : 'پیام صوتی دبیر'}</span>
-                          <span>{msg.voiceDuration || 3} ثانیه</span>
-                        </div>
-                      </div>
-                    </div>
+                    <VoiceMessagePlayer
+                      audioUrl={msg.fileUrl}
+                      duration={msg.voiceDuration || 3}
+                      messageId={msg.id}
+                      isMe={isMe}
+                      isActive={activeAudioId === msg.id}
+                      onPlay={(id) => setActiveAudioId(id)}
+                      onPause={() => setActiveAudioId(null)}
+                    />
                   )}
 
                   {/* Message Content: File/Document */}
@@ -681,25 +716,68 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
 
       {/* Audio Recording State Bar */}
       {isRecording && (
-        <div className="p-3 bg-rose-950/80 border-t border-rose-500/40 flex items-center justify-between text-xs text-rose-200 z-20 animate-pulse">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-rose-500 animate-ping"></div>
-            <span className="font-semibold">در حال ضبط صدای دبیر ({recordTimer} ثانیه)...</span>
+        <div className="p-3 bg-rose-950/90 border-t border-rose-500/50 flex items-center justify-between text-xs text-rose-200 z-30 shadow-lg backdrop-blur-md">
+          <div className="flex items-center gap-3">
+            <div className="relative flex items-center justify-center">
+              <span className="w-3.5 h-3.5 rounded-full bg-rose-500 animate-ping absolute" />
+              <span className="w-3.5 h-3.5 rounded-full bg-rose-500" />
+            </div>
+
+            <div className="flex flex-col">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-rose-100 font-mono text-sm">
+                  {formatAudioTime(recordTimer)}
+                </span>
+                <span className="text-[11px] text-rose-300 font-medium">
+                  {micNotice ? 'در حال ضبط صدا...' : 'در حال ضبط صدای واقعی از میکروفون...'}
+                </span>
+              </div>
+              
+              {/* Dynamic waveform responding to microphone audio level */}
+              <div className="flex items-center gap-1 mt-1 h-3">
+                {[12, 24, 40, 65, 85, 95, 80, 60, 45, 30, 18, 28, 50, 75, 90, 65, 35].map((baseH, idx) => {
+                  const scale = Math.max(0.25, audioLevel / 100);
+                  const h = Math.max(3, Math.min(14, Math.round((baseH * scale) / 6)));
+                  return (
+                    <div
+                      key={idx}
+                      style={{ height: `${h}px` }}
+                      className="w-[3px] bg-rose-400 rounded-full transition-all duration-75"
+                    />
+                  );
+                })}
+              </div>
+            </div>
           </div>
+
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={cancelRecording}
-              className="text-slate-400 hover:text-slate-200 text-xs px-2 py-1 rounded"
+              disabled={isSendingVoice}
+              className="p-2 rounded-xl text-slate-400 hover:text-rose-300 hover:bg-rose-900/30 transition-colors"
+              title="لغو و حذف ضبط"
             >
-              انصراف
+              <Trash2 className="w-4 h-4" />
             </button>
+
             <button
               type="button"
               onClick={stopAndSendRecording}
-              className="bg-rose-600 hover:bg-rose-500 text-white text-xs px-3 py-1 rounded-xl shadow font-medium"
+              disabled={isSendingVoice}
+              className="py-1.5 px-3.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl shadow-md shadow-rose-600/30 font-bold flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
             >
-              ارسال صوت
+              {isSendingVoice ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>در حال ارسال...</span>
+                </>
+              ) : (
+                <>
+                  <Send className="w-3.5 h-3.5 rotate-180" />
+                  <span>ارسال صوت</span>
+                </>
+              )}
             </button>
           </div>
         </div>
