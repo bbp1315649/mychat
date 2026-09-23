@@ -36,10 +36,11 @@ export interface DbSchema {
     senderRole: string;
     senderAvatar: string;
     content: string;
-    type: 'text' | 'image' | 'voice' | 'file' | 'announcement' | 'circular';
+    type: 'text' | 'image' | 'video' | 'voice' | 'file' | 'announcement' | 'circular';
     fileUrl?: string;
     fileName?: string;
     voiceDuration?: number;
+    videoDuration?: number;
     isPinned: boolean;
     replyToId?: string;
     replyToContent?: string;
@@ -628,10 +629,11 @@ class FileDatabaseEngine {
     senderRole: string;
     senderAvatar: string;
     content: string;
-    type?: 'text' | 'image' | 'voice' | 'file' | 'announcement' | 'circular';
+    type?: 'text' | 'image' | 'video' | 'voice' | 'file' | 'announcement' | 'circular';
     fileUrl?: string;
     fileName?: string;
     voiceDuration?: number;
+    videoDuration?: number;
     replyTo?: { id: string; content: string; senderName: string };
   }): Message {
     const newId = 'm_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5);
@@ -649,6 +651,7 @@ class FileDatabaseEngine {
       fileUrl: msg.fileUrl,
       fileName: msg.fileName,
       voiceDuration: msg.voiceDuration,
+      videoDuration: msg.videoDuration,
       isPinned: false,
       replyToId: msg.replyTo?.id,
       replyToContent: msg.replyTo?.content,
@@ -675,6 +678,7 @@ class FileDatabaseEngine {
       fileUrl: newMsg.fileUrl,
       fileName: newMsg.fileName,
       voiceDuration: newMsg.voiceDuration,
+      videoDuration: newMsg.videoDuration,
       isPinned: false,
       reactions: {},
       readBy: [newMsg.senderId],

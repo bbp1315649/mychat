@@ -127,10 +127,11 @@ export class DatabaseRepository {
     senderRole: string;
     senderAvatar: string;
     content: string;
-    type?: 'text' | 'voice' | 'circular' | 'file';
+    type?: 'text' | 'image' | 'video' | 'voice' | 'file' | 'announcement' | 'circular';
     fileUrl?: string;
     fileName?: string;
     voiceDuration?: number;
+    videoDuration?: number;
     replyTo?: { id: string; content: string; senderName: string };
   }): Promise<Message> {
     return fileDb.insertMessage(msg);

@@ -25,7 +25,7 @@ function getPort(): number {
 
 const PORT = getPort();
 const app = express();
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
 
 // ----------------------------------------------------
 // WebSocket Real-Time Broadcaster
@@ -409,7 +409,7 @@ app.get('/api/messages/:chatId', async (req, res) => {
 // 9. Send message
 app.post('/api/messages', async (req, res) => {
   try {
-    const { chatId, senderId, content, type = 'text', fileUrl, fileName, voiceDuration, replyTo } = req.body;
+    const { chatId, senderId, content, type = 'text', fileUrl, fileName, voiceDuration, videoDuration, replyTo } = req.body;
 
     const allUsers = await DatabaseRepository.getAllUsers();
     const sender = allUsers.find(u => u.id === senderId);
@@ -435,6 +435,7 @@ app.post('/api/messages', async (req, res) => {
       fileUrl,
       fileName,
       voiceDuration,
+      videoDuration,
       replyTo,
     });
 

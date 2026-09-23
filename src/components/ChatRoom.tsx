@@ -26,7 +26,9 @@ import {
   Maximize2,
   Image as ImageIcon,
   Trash2,
-  Loader2
+  Loader2,
+  Video,
+  Film
 } from 'lucide-react';
 import { CameraCaptureModal } from './CameraCaptureModal';
 import { ImageLightboxModal } from './ImageLightboxModal';
@@ -111,6 +113,8 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
   const [showReactionPickerForId, setShowReactionPickerForId] = useState<string | null>(null);
   const [showGroupInfoModal, setShowGroupInfoModal] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [cameraModalMode, setCameraModalMode] = useState<'photo' | 'video'>('photo');
+  const [showStickerDrawer, setShowStickerDrawer] = useState(false);
 
   // Send photo captured via camera or selected from device
   const handleSendPhoto = async (photoDataUrl: string, caption: string, fileName?: string) => {
@@ -125,6 +129,44 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
         fileName: fileName || 'classroom_report.jpg',
       });
       onSendMessage(msg);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  // Send video captured via camera or selected from device
+  const handleSendVideo = async (videoDataUrl: string, caption: string, duration: number, fileName?: string) => {
+    setIsSending(true);
+    try {
+      const msg = await api.sendMessage({
+        chatId,
+        senderId: currentUser.id,
+        content: caption,
+        type: 'video',
+        fileUrl: videoDataUrl,
+        fileName: fileName || 'classroom_video.webm',
+        videoDuration: duration,
+      });
+      onSendMessage(msg);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  // Direct sticker send
+  const handleSendDirectSticker = async (stickerText: string) => {
+    setIsSending(true);
+    setShowStickerDrawer(false);
+    try {
+      const msg = await api.sendMessage({
+        chatId,
+        senderId: currentUser.id,
+        content: stickerText,
+        type: 'text',
+      });
+      onSendMessage(msg);
+    } catch (e: any) {
+      console.error('Failed to send sticker:', e);
     } finally {
       setIsSending(false);
     }
@@ -329,8 +371,16 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
     }
   };
 
-  // Quick Emoji reactions
-  const quickEmojis = ['👍', '❤️', '👏', '🙏', '✅', '🔥'];
+  // Helper to detect if a message is pure stickers/emojis
+  const isStickerOnly = (text?: string): boolean => {
+    if (!text) return false;
+    const trimmed = text.trim();
+    const emojiRegex = /^(?:\p{Extended_Pictographic}|\p{Emoji_Presentation}|\u200d|\ufe0f|\u20e3){1,6}$/u;
+    return emojiRegex.test(trimmed);
+  };
+
+  // Quick Emoji reactions (enlarged & education-themed)
+  const quickEmojis = ['👍', '❤️', '👏', '🙏', '✅', '🔥', '🎉', '🌹', '💯', '🌸', '💐', '📚', '🎓', '⭐'];
 
   return (
     <div className="flex-1 flex flex-col h-full bg-slate-950 text-slate-100 overflow-hidden relative">
@@ -428,6 +478,8 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
             const isMe = msg.senderId === currentUser.id;
             const isMsgPrincipal = msg.senderRole === 'principal';
             const isMsgDeputy = msg.senderRole === 'deputy';
+            const isMedia = msg.type === 'image' || msg.type === 'video' || (msg.fileUrl && (msg.fileUrl.startsWith('data:image') || msg.fileUrl.match(/\.(jpg|jpeg|png|webp|gif)/i)));
+            const isSticker = isStickerOnly(msg.content);
 
             return (
               <div
@@ -454,14 +506,22 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                   </div>
                 )}
 
-                {/* Message Bubble */}
+                {/* Message Bubble - Thinner subtle frame for media, sticker support */}
                 <div
-                  className={`max-w-[85%] rounded-2xl p-3 shadow-md relative transition-all ${
+                  className={`max-w-[85%] rounded-2xl shadow-md relative transition-all ${
+                    isMedia ? 'p-1.5' : isSticker ? 'p-1 bg-transparent shadow-none' : 'p-3'
+                  } ${
                     msg.type === 'announcement'
                       ? 'bg-gradient-to-r from-amber-950/80 via-slate-900 to-amber-950/70 border border-amber-500/40 text-amber-100 rounded-br-none'
-                      : isMe
-                        ? 'bg-blue-600 text-white rounded-bl-none'
-                        : 'bg-slate-900 text-slate-100 border border-slate-800 rounded-br-none'
+                      : isSticker
+                        ? 'text-slate-100'
+                        : isMe
+                          ? isMedia
+                            ? 'bg-blue-600/70 border border-blue-400/30 text-white rounded-bl-none'
+                            : 'bg-blue-600 text-white rounded-bl-none'
+                          : isMedia
+                            ? 'bg-slate-900 border border-slate-800 text-slate-100 rounded-br-none'
+                            : 'bg-slate-900 text-slate-100 border border-slate-800 rounded-br-none'
                   }`}
                 >
                   {/* Reply Reference if any */}
@@ -515,7 +575,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                     </div>
                   )}
 
-                  {/* Message Content: Image / Classroom Photo */}
+                  {/* Message Content: Image / Classroom Photo (Slim frame) */}
                   {(msg.type === 'image' || (msg.fileUrl && (msg.fileUrl.startsWith('data:image') || msg.fileUrl.match(/\.(jpg|jpeg|png|webp|gif)/i)))) && (
                     <div 
                       onClick={() => setActiveLightboxImage({
@@ -536,7 +596,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                           });
                         }
                       }}
-                      className="mb-2 rounded-xl overflow-hidden border border-white/10 relative group cursor-pointer bg-black/40 select-none shadow-sm"
+                      className="rounded-xl overflow-hidden relative group cursor-pointer bg-black/40 select-none shadow-sm"
                       title="لمس برای بزرگ‌نمایی و تغییر اندازه با دو انگشت"
                     >
                       <img
@@ -551,21 +611,49 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                       </div>
                       <div className="absolute bottom-2 left-2 p-1.5 rounded-lg bg-black/70 backdrop-blur-sm text-amber-300 opacity-90 group-hover:opacity-100 transition-opacity flex items-center gap-1 text-[10px] shadow border border-white/10">
                         <Maximize2 className="w-3 h-3" />
-                        <span>تغییر اندازه دو انگشتی (Pinch)</span>
+                        <span>بزرگ‌نمایی دو انگشتی</span>
                       </div>
                     </div>
                   )}
 
-                  {/* Text content / Caption */}
+                  {/* Message Content: Video / Classroom Clip */}
+                  {msg.type === 'video' && msg.fileUrl && (
+                    <div className="rounded-xl overflow-hidden relative bg-black shadow-md">
+                      <video
+                        src={msg.fileUrl}
+                        controls
+                        playsInline
+                        preload="metadata"
+                        className="w-full max-h-72 object-contain rounded-lg bg-black"
+                      />
+                      <div className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-black/70 backdrop-blur-md text-[9px] text-white flex items-center gap-1 border border-white/20 shadow pointer-events-none">
+                        <Video className="w-3 h-3 text-rose-400" />
+                        <span>ویدیوی کلاسی</span>
+                        {msg.videoDuration && (
+                          <span className="font-mono text-slate-300">({formatAudioTime(msg.videoDuration)})</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Text content / Caption / Large Sticker */}
                   {msg.type !== 'voice' && msg.content && (
-                    <p className="text-xs leading-relaxed whitespace-pre-wrap select-text">
-                      {msg.content}
-                    </p>
+                    isSticker ? (
+                      <div className="text-5xl sm:text-6xl py-2 px-1 text-center select-text hover:scale-110 active:scale-95 transition-transform cursor-pointer leading-none">
+                        {msg.content}
+                      </div>
+                    ) : (
+                      <p className={`text-xs leading-relaxed whitespace-pre-wrap select-text ${isMedia ? 'px-1.5 pt-1.5 pb-0.5' : ''}`}>
+                        {msg.content}
+                      </p>
+                    )
                   )}
 
                   {/* Footer: Time, Pin icon, Read status */}
-                  <div className={`flex items-center justify-end gap-1 mt-1.5 text-[10px] ${
-                    isMe ? 'text-blue-100/80' : 'text-slate-400'
+                  <div className={`flex items-center justify-end gap-1 mt-1 text-[10px] ${
+                    isMedia ? 'px-1.5 pb-0.5' : ''
+                  } ${
+                    isMe ? (isSticker ? 'text-slate-400' : 'text-blue-100/80') : 'text-slate-400'
                   }`}>
                     {msg.isPinned && (
                       <span title="سنجاق شده">
@@ -579,23 +667,23 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                   </div>
                 </div>
 
-                {/* Reactions Display */}
+                {/* Reactions Display (Larger and bolder stickers) */}
                 {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-1 px-1">
+                  <div className="flex flex-wrap gap-1.5 mt-1.5 px-0.5">
                     {Object.entries(msg.reactions).map(([emoji, userIds]) => {
                       const hasReacted = userIds.includes(currentUser.id);
                       return (
                         <button
                           key={emoji}
                           onClick={() => onReactMessage(msg.id, emoji)}
-                          className={`text-[11px] px-1.5 py-0.5 rounded-full border flex items-center gap-1 transition-all ${
+                          className={`px-2 py-0.5 rounded-full border flex items-center gap-1.5 transition-all shadow-sm ${
                             hasReacted
-                              ? 'bg-blue-600/30 border-blue-500/60 text-blue-200'
-                              : 'bg-slate-900/80 border-slate-800 text-slate-300 hover:bg-slate-800'
+                              ? 'bg-blue-600/30 border-blue-500/70 text-blue-200'
+                              : 'bg-slate-900/90 border-slate-800 text-slate-300 hover:bg-slate-800'
                           }`}
                         >
-                          <span>{emoji}</span>
-                          <span className="text-[10px] font-mono">{userIds.length}</span>
+                          <span className="text-base sm:text-lg leading-none">{emoji}</span>
+                          <span className="text-[11px] font-mono font-bold">{userIds.length}</span>
                         </button>
                       );
                     })}
@@ -642,9 +730,9 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                   )}
                 </div>
 
-                {/* Emoji Picker Popover */}
+                {/* Emoji Picker Popover (Enlarged) */}
                 {showReactionPickerForId === msg.id && (
-                  <div className="bg-slate-900 border border-slate-700 shadow-xl rounded-2xl p-1.5 flex items-center gap-1 z-30 mt-1">
+                  <div className="bg-slate-900/95 backdrop-blur-md border border-slate-700 shadow-2xl rounded-2xl p-2 flex items-center gap-1.5 z-30 mt-1 animate-in fade-in zoom-in-95">
                     {quickEmojis.map((emoji) => (
                       <button
                         key={emoji}
@@ -652,16 +740,16 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                           onReactMessage(msg.id, emoji);
                           setShowReactionPickerForId(null);
                         }}
-                        className="hover:scale-125 transition-transform p-1 text-base"
+                        className="hover:scale-135 active:scale-95 transition-transform p-1 text-2xl leading-none"
                       >
                         {emoji}
                       </button>
                     ))}
                     <button
                       onClick={() => setShowReactionPickerForId(null)}
-                      className="text-slate-500 hover:text-slate-300 p-0.5"
+                      className="text-slate-500 hover:text-slate-300 p-1"
                     >
-                      <X className="w-3 h-3" />
+                      <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 )}
@@ -693,17 +781,31 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
 
       {/* Attachment Options Menu */}
       {showAttachMenu && (
-        <div className="bg-slate-900 border-t border-slate-800 p-3 grid grid-cols-3 gap-2 z-20">
+        <div className="bg-slate-900 border-t border-slate-800 p-3 grid grid-cols-2 sm:grid-cols-4 gap-2 z-20">
           <button
             type="button"
             onClick={() => {
               setShowAttachMenu(false);
+              setCameraModalMode('photo');
               setShowCameraModal(true);
             }}
             className="p-2.5 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 flex flex-col items-center gap-1.5 text-blue-300 transition-all group"
           >
             <Camera className="w-5 h-5 text-blue-400 group-hover:scale-110 transition-transform" />
-            <span className="text-[10px] font-medium">دوربین و عکس کلاسی</span>
+            <span className="text-[10px] font-medium">عکس کلاسی</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setShowAttachMenu(false);
+              setCameraModalMode('video');
+              setShowCameraModal(true);
+            }}
+            className="p-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 flex flex-col items-center gap-1.5 text-rose-300 transition-all group"
+          >
+            <Video className="w-5 h-5 text-rose-400 group-hover:scale-110 transition-transform" />
+            <span className="text-[10px] font-medium">فیلم‌برداری و ویدیو</span>
           </button>
 
           <button
@@ -723,6 +825,58 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
             <FileText className="w-5 h-5 text-emerald-400" />
             <span className="text-[10px] font-medium">فایل و سند</span>
           </button>
+        </div>
+      )}
+
+      {/* Stickers and Praise Badges Drawer */}
+      {showStickerDrawer && (
+        <div className="bg-slate-900 border-t border-slate-800 p-3 z-20 animate-in slide-in-from-bottom duration-150">
+          <div className="flex items-center justify-between mb-2 pb-1 border-b border-slate-800 text-xs font-semibold text-slate-300">
+            <div className="flex items-center gap-1.5">
+              <Smile className="w-4 h-4 text-amber-400" />
+              <span>استیکرها و نشان‌های تشویقی کادر آموزشی</span>
+            </div>
+            <button
+              onClick={() => setShowStickerDrawer(false)}
+              className="text-slate-400 hover:text-slate-200 p-1"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Quick Praise Badges */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-2 mb-2 scrollbar-none">
+            {['عالی 👏', 'خسته نباشید 🌹', 'آفرین ⭐', 'تایید شد ✅', 'با تشکر 🙏', 'موفق باشید 🎓', 'درجه یک 💯'].map((praise, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => handleSendDirectSticker(praise)}
+                className="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-blue-600/30 text-slate-200 hover:text-blue-300 border border-slate-700 text-xs whitespace-nowrap transition-all active:scale-95 shadow-sm"
+              >
+                {praise}
+              </button>
+            ))}
+          </div>
+
+          {/* Large Stickers Grid */}
+          <div className="grid grid-cols-7 sm:grid-cols-9 gap-2 max-h-40 overflow-y-auto p-1">
+            {[
+              '👍', '❤️', '👏', '🙏', '✅', '🔥', '🎉',
+              '🌹', '🌸', '💐', '📚', '🎓', '✍️', '🏫',
+              '💯', '⭐', '🏆', '🥇', '✨', '👌', '🤝',
+              '💪', '🎯', '📝', '🔔', '📢', '💡', '⏰'
+            ].map((stk, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => handleSendDirectSticker(stk)}
+                className="text-3xl sm:text-4xl p-1.5 hover:scale-130 active:scale-95 transition-transform flex items-center justify-center rounded-xl hover:bg-slate-800/80"
+                title="ارسال استیکر"
+              >
+                {stk}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -786,7 +940,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                 </>
               ) : (
                 <>
-                  <Send className="w-3.5 h-3.5 rotate-180" />
+                  <Send className="w-3.5 h-3.5" />
                   <span>ارسال صوت</span>
                 </>
               )}
@@ -818,14 +972,34 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
               <Paperclip className="w-4 h-4" />
             </button>
 
-            {/* Direct Camera Button */}
+            {/* Direct Camera / Video Button */}
             <button
               type="button"
-              onClick={() => setShowCameraModal(true)}
+              onClick={() => {
+                setCameraModalMode('photo');
+                setShowCameraModal(true);
+              }}
               className="p-2 bg-slate-950 hover:bg-slate-850 hover:text-blue-400 text-slate-400 border border-slate-800 rounded-xl transition-colors"
-              title="ارسال عکس با دوربین یا گالری گوشی"
+              title="عکاسی و فیلم‌برداری کلاسی"
             >
               <Camera className="w-4 h-4" />
+            </button>
+
+            {/* Sticker Drawer Toggle */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowStickerDrawer(!showStickerDrawer);
+                setShowAttachMenu(false);
+              }}
+              className={`p-2 rounded-xl border transition-all ${
+                showStickerDrawer
+                  ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                  : 'bg-slate-950 hover:bg-slate-850 text-slate-400 border-slate-800'
+              }`}
+              title="استیکرها و نشان‌های تشویقی"
+            >
+              <Smile className="w-4 h-4" />
             </button>
 
             {/* Input field */}
@@ -851,14 +1025,14 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
               </button>
             )}
 
-            {/* Send Button */}
+            {/* Send Button (Send icon strictly pointing up-right) */}
             <button
               type="submit"
               disabled={!inputText.trim()}
               className="p-2 bg-blue-600 hover:bg-blue-500 active:scale-95 disabled:opacity-40 disabled:pointer-events-none text-white rounded-xl shadow-md shadow-blue-500/20 transition-all"
               title="ارسال پیام"
             >
-              <Send className="w-4 h-4 rotate-180" />
+              <Send className="w-4 h-4" />
             </button>
           </form>
         )}
@@ -945,11 +1119,13 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
         </div>
       )}
 
-      {/* Camera Capture & Classroom Photo Modal */}
+      {/* Camera Capture & Classroom Photo/Video Modal */}
       <CameraCaptureModal
         isOpen={showCameraModal}
         onClose={() => setShowCameraModal(false)}
         onSendPhoto={handleSendPhoto}
+        onSendVideo={handleSendVideo}
+        initialMode={cameraModalMode}
       />
 
       {/* Fullscreen Photo Lightbox Modal */}

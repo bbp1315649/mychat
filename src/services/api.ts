@@ -173,11 +173,12 @@ export const api = {
     chatId: string;
     senderId: string;
     content: string;
-    type?: 'text' | 'image' | 'voice' | 'file' | 'announcement';
+    type?: 'text' | 'image' | 'video' | 'voice' | 'file' | 'announcement';
     fileUrl?: string;
     fileName?: string;
     fileSize?: string;
     voiceDuration?: number;
+    videoDuration?: number;
     replyTo?: { id: string; senderName: string; content: string };
   }): Promise<Message> {
     const data = await safeFetchJson<{ success: boolean; message: Message }>(`${API_BASE}/messages`, {

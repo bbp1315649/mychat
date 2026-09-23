@@ -39,11 +39,12 @@ export interface Message {
   senderRole: UserRole;
   senderAvatar: string;
   content: string;
-  type: 'text' | 'image' | 'voice' | 'file' | 'announcement';
+  type: 'text' | 'image' | 'video' | 'voice' | 'file' | 'announcement';
   fileUrl?: string;
   fileName?: string;
   fileSize?: string;
   voiceDuration?: number; // in seconds
+  videoDuration?: number; // in seconds
   isPinned?: boolean;
   replyTo?: {
     id: string;
