@@ -10,7 +10,7 @@ import { StaffDirectory } from './components/StaffDirectory';
 import { UserProfile } from './components/UserProfile';
 import { BottomNav, TabType } from './components/BottomNav';
 import { CreateGroupModal } from './components/CreateGroupModal';
-import { Crown, LogOut, Lock } from 'lucide-react';
+import { Crown, LogOut, Lock, School, Loader2 } from 'lucide-react';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -71,6 +71,11 @@ export default function App() {
           } catch (e) {
             // ignore
           }
+        }
+
+        // If not saved in localStorage, default to Principal account so app immediately opens
+        if (!initialUser && uList.length > 0) {
+          initialUser = uList.find(u => u.role === 'principal') || uList[0];
         }
 
         if (initialUser) {
@@ -326,7 +331,18 @@ export default function App() {
 
   return (
     <MobileFrame>
-      {!currentUser ? (
+      {loadingInitial ? (
+        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-slate-300">
+          <div className="w-14 h-14 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 mb-3 animate-pulse">
+            <School className="w-7 h-7" />
+          </div>
+          <div className="text-sm font-bold text-slate-100">پیام‌رسان کادر آموزشی مدرسه</div>
+          <div className="text-xs text-slate-400 mt-2 flex items-center gap-1.5 justify-center">
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-400" />
+            <span>در حال بارگذاری اطلاعات و گفتگوها...</span>
+          </div>
+        </div>
+      ) : !currentUser ? (
         <AuthModal onSuccess={handleAuthSuccess} />
       ) : (
         <div className="flex-1 flex flex-col h-full overflow-hidden relative">

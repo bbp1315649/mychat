@@ -1,6 +1,7 @@
 import express from 'express';
 import http from 'http';
 import path from 'path';
+import fs from 'fs';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer as createViteServer } from 'vite';
 import { DatabaseRepository } from './src/db/repository';
@@ -525,16 +526,27 @@ app.use('/api', (err: any, req: any, res: any, next: any) => {
 // Vite Dev Server / Static Production Handler
 // ----------------------------------------------------
 let viteMiddleware: any = null;
+const distPath = path.join(process.cwd(), 'dist');
 
-// Dynamic frontend handler: serves Vite when ready, or clean status if starting
+// Serve static assets from dist if they exist
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+}
+
+// Dynamic frontend handler: serves Vite when ready in dev, or static index.html in production
 app.use((req, res, next) => {
-  if (viteMiddleware) {
-    return viteMiddleware(req, res, next);
-  }
   if (req.url.startsWith('/api') || req.url === '/ws') {
     return next();
   }
-  // While Vite finishes bundling (~500ms), serve immediate 200 OK so Nginx never sees 502/ECONNREFUSED
+  if (viteMiddleware) {
+    return viteMiddleware(req, res, next);
+  }
+  // If production build index.html exists, serve it directly
+  const indexPath = path.join(distPath, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    return res.sendFile(indexPath);
+  }
+  // While Vite finishes bundling (~500ms in dev mode), serve quick initial reload
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(`<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="1"><title>پیام‌رسان مدرسه</title></head><body style="background:#0f172a;color:#94a3b8;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><p style="font-size:14px;">در حال آماده‌سازی سامانه مدرسه...</p></body></html>`);
 });
@@ -576,10 +588,13 @@ async function setupViteOrStatic() {
       console.error('Failed to create Vite server:', err);
     }
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
     app.get('*', (req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+      const indexPath = path.join(distPath, 'index.html');
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.status(404).send('Not Found');
+      }
     });
   }
 }
