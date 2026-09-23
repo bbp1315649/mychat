@@ -525,7 +525,19 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                         caption: msg.content,
                         timestamp: msg.timestamp
                       })}
+                      onTouchStart={(e) => {
+                        if (e.touches.length === 2) {
+                          setActiveLightboxImage({
+                            url: msg.fileUrl || '',
+                            senderName: msg.senderName,
+                            senderAvatar: msg.senderAvatar,
+                            caption: msg.content,
+                            timestamp: msg.timestamp
+                          });
+                        }
+                      }}
                       className="mb-2 rounded-xl overflow-hidden border border-white/10 relative group cursor-pointer bg-black/40 select-none shadow-sm"
+                      title="لمس برای بزرگ‌نمایی و تغییر اندازه با دو انگشت"
                     >
                       <img
                         src={msg.fileUrl}
@@ -537,9 +549,9 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                         <Camera className="w-3 h-3 text-blue-400" />
                         <span>گزارش کلاسی</span>
                       </div>
-                      <div className="absolute bottom-2 left-2 p-1.5 rounded-lg bg-black/60 backdrop-blur-sm text-white/90 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 text-[10px] shadow">
+                      <div className="absolute bottom-2 left-2 p-1.5 rounded-lg bg-black/70 backdrop-blur-sm text-amber-300 opacity-90 group-hover:opacity-100 transition-opacity flex items-center gap-1 text-[10px] shadow border border-white/10">
                         <Maximize2 className="w-3 h-3" />
-                        <span>مشاهده اندازه کامل</span>
+                        <span>تغییر اندازه دو انگشتی (Pinch)</span>
                       </div>
                     </div>
                   )}

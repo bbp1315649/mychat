@@ -5,7 +5,25 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { createServer as createViteServer } from 'vite';
 import { DatabaseRepository } from './src/db/repository';
 
-const PORT = 3000;
+// Prevent unhandled errors from terminating the process
+process.on('uncaughtException', (err) => {
+  console.error('Server uncaught exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Server unhandled rejection at:', promise, 'reason:', reason);
+});
+
+function getPort(): number {
+  const portArgIndex = process.argv.indexOf('--port');
+  if (portArgIndex !== -1 && process.argv[portArgIndex + 1]) {
+    const parsed = parseInt(process.argv[portArgIndex + 1], 10);
+    if (!isNaN(parsed)) return parsed;
+  }
+  return 3000;
+}
+
+const PORT = getPort();
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 
@@ -14,6 +32,10 @@ app.use(express.json({ limit: '10mb' }));
 // ----------------------------------------------------
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
+
+wss.on('error', (err) => {
+  console.warn('WebSocket Server error:', err);
+});
 
 function broadcast(eventType: string, payload: any) {
   const msg = JSON.stringify({ type: eventType, data: payload });
@@ -29,7 +51,15 @@ function broadcast(eventType: string, payload: any) {
 }
 
 wss.on('connection', (ws) => {
-  ws.send(JSON.stringify({ type: 'connected', data: { timestamp: new Date().toISOString() } }));
+  ws.on('error', (err) => {
+    console.warn('WebSocket client socket error:', err);
+  });
+
+  try {
+    ws.send(JSON.stringify({ type: 'connected', data: { timestamp: new Date().toISOString() } }));
+  } catch (e) {
+    // ignore
+  }
 
   ws.on('message', (data) => {
     try {
@@ -493,8 +523,40 @@ app.use('/api', (err: any, req: any, res: any, next: any) => {
 // ----------------------------------------------------
 // Vite Dev Server / Static Production Handler
 // ----------------------------------------------------
+let viteMiddleware: any = null;
+
+// Dynamic frontend handler: serves Vite when ready, or clean status if starting
+app.use((req, res, next) => {
+  if (viteMiddleware) {
+    return viteMiddleware(req, res, next);
+  }
+  if (req.url.startsWith('/api') || req.url === '/ws') {
+    return next();
+  }
+  // While Vite finishes bundling (~500ms), serve immediate 200 OK so Nginx never sees 502/ECONNREFUSED
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="1"><title>پیام‌رسان مدرسه</title></head><body style="background:#0f172a;color:#94a3b8;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><p style="font-size:14px;">در حال آماده‌سازی سامانه مدرسه...</p></body></html>`);
+});
+
+server.on('error', (err: any) => {
+  if (err.code === 'EADDRINUSE') {
+    console.warn(`Port ${PORT} is busy, retrying in 400ms...`);
+    setTimeout(() => {
+      server.close();
+      server.listen(PORT, '0.0.0.0');
+    }, 400);
+  } else {
+    console.error('HTTP Server error:', err);
+  }
+});
+
+// Start listening immediately on port 3000
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`School Chat Server listening at http://0.0.0.0:${PORT}`);
+});
+
 async function setupViteOrStatic() {
-  // Seed default data if database is fresh
+  // Seed default data asynchronously in background
   try {
     await DatabaseRepository.seedIfEmpty();
   } catch (e) {
@@ -502,11 +564,16 @@ async function setupViteOrStatic() {
   }
 
   if (process.env.NODE_ENV !== 'production') {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
+    try {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa',
+      });
+      viteMiddleware = vite.middlewares;
+      console.log('Vite middleware mounted successfully.');
+    } catch (err) {
+      console.error('Failed to create Vite server:', err);
+    }
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
@@ -514,10 +581,6 @@ async function setupViteOrStatic() {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
-
-  server.listen(PORT, '0.0.0.0', () => {
-    console.log(`School Chat Server with Cloud SQL running at http://0.0.0.0:${PORT}`);
-  });
 }
 
 setupViteOrStatic();
