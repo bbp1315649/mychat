@@ -549,58 +549,50 @@ app.post('/api/translate', async (req, res) => {
     const resolvedTarget = targetLang || (hasPersian ? 'en' : 'fa');
     const resolvedSource = sourceLang || (resolvedTarget === 'en' ? 'fa' : 'en');
 
-    // 1. Primary: Gemini 3.8 Flash model
-    if (ai) {
-      try {
-        const prompt = resolvedTarget === 'en'
-          ? `Translate the following Persian text accurately into natural, polite, and fluent English. Suitable for Iranian schools, teachers, and educational staff communications. Return ONLY the translated English text with no quotes, markdown formatting, or notes:\n\n${cleanInput}`
-          : `Translate the following English text accurately into natural, polite, and formal Persian (Farsi) suitable for Iranian school communications and teachers. Return ONLY the translated Persian text with no quotes, markdown formatting, or notes:\n\n${cleanInput}`;
-
-        const geminiPromise = ai.models.generateContent({
-          model: 'gemini-3.8-flash',
-          contents: prompt,
-        });
-
-        // Timeout race to prevent waiting if Gemini is busy
-        const timeoutPromise = new Promise<never>((_, reject) => 
-          setTimeout(() => reject(new Error('Gemini timeout')), 4500)
-        );
-
-        const response: any = await Promise.race([geminiPromise, timeoutPromise]);
-        const resultText = response.text ? response.text.trim().replace(/^["']|["']$/g, '') : '';
-
-        if (resultText) {
-          return res.json({
-            success: true,
-            originalText: cleanInput,
-            translatedText: resultText,
-            sourceLang: resolvedSource,
-            targetLang: resolvedTarget,
-            engine: 'gemini',
-          });
+    // 1. Primary Engine: Ultra-fast Google Translate (gtx) - ~150ms response, high reliability, zero quota exhaustion
+    try {
+      const gtxUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${resolvedSource}&tl=${resolvedTarget}&dt=t&q=${encodeURIComponent(cleanInput)}`;
+      const gtxRes = await fetch(gtxUrl, { signal: AbortSignal.timeout(3500) });
+      if (gtxRes.ok) {
+        const gtxData = await gtxRes.json();
+        if (Array.isArray(gtxData) && Array.isArray(gtxData[0])) {
+          const translatedText = gtxData[0]
+            .map((chunk: any) => (chunk && chunk[0] ? chunk[0] : ''))
+            .join('')
+            .trim();
+          if (translatedText && translatedText.toLowerCase() !== cleanInput.toLowerCase()) {
+            return res.json({
+              success: true,
+              originalText: cleanInput,
+              translatedText: decodeHtmlEntities(translatedText),
+              sourceLang: resolvedSource,
+              targetLang: resolvedTarget,
+              engine: 'gtx',
+            });
+          }
         }
-      } catch (geminiError: any) {
-        console.warn('Gemini translation temporarily unavailable, using fallback:', geminiError.message || geminiError);
       }
+    } catch (gtxError: any) {
+      console.warn('GTX translation error, switching to secondary engine:', gtxError.message || gtxError);
     }
 
     // 2. Secondary: Fast cloud translation service (MyMemory)
     try {
       const langpair = `${resolvedSource}|${resolvedTarget}`;
       const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(cleanInput)}&langpair=${langpair}`;
-      const fetchRes = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      const fetchRes = await fetch(url, { signal: AbortSignal.timeout(3500) });
       if (fetchRes.ok) {
         const json: any = await fetchRes.json();
         let candidate = '';
         if (json.matches && Array.isArray(json.matches)) {
-          const best = json.matches.find((m: any) => m.quality >= 50 && !m.translation.startsWith('['));
+          const best = json.matches.find((m: any) => m.quality >= 40 && !m.translation.startsWith('['));
           if (best && best.translation) candidate = best.translation;
         }
         if (!candidate && json.responseData?.translatedText) {
           candidate = json.responseData.translatedText.replace(/\[.*?\]\s*/g, '');
         }
 
-        if (candidate) {
+        if (candidate && candidate.toLowerCase() !== cleanInput.toLowerCase()) {
           const decoded = decodeHtmlEntities(candidate.trim());
           return res.json({
             success: true,
@@ -616,7 +608,42 @@ app.post('/api/translate', async (req, res) => {
       console.warn('Fallback translation error:', fallbackError.message || fallbackError);
     }
 
-    // 3. Fallback dictionary for common school/teacher phrases
+    // 3. Tertiary: Gemini model (if available)
+    if (ai) {
+      try {
+        const prompt = resolvedTarget === 'en'
+          ? `Translate the following Persian text accurately into natural, polite, and fluent English. Suitable for Iranian schools, teachers, and educational staff communications. Return ONLY the translated English text with no quotes, markdown formatting, or notes:\n\n${cleanInput}`
+          : `Translate the following English text accurately into natural, polite, and formal Persian (Farsi) suitable for Iranian school communications and teachers. Return ONLY the translated Persian text with no quotes, markdown formatting, or notes:\n\n${cleanInput}`;
+
+        const geminiPromise = ai.models.generateContent({
+          model: 'gemini-3.8-flash',
+          contents: prompt,
+        });
+
+        // Timeout race to prevent waiting if Gemini is busy
+        const timeoutPromise = new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error('Gemini timeout')), 3000)
+        );
+
+        const response: any = await Promise.race([geminiPromise, timeoutPromise]);
+        const resultText = response.text ? response.text.trim().replace(/^["']|["']$/g, '') : '';
+
+        if (resultText && resultText.toLowerCase() !== cleanInput.toLowerCase()) {
+          return res.json({
+            success: true,
+            originalText: cleanInput,
+            translatedText: resultText,
+            sourceLang: resolvedSource,
+            targetLang: resolvedTarget,
+            engine: 'gemini',
+          });
+        }
+      } catch (geminiError: any) {
+        console.warn('Gemini translation temporarily unavailable, using fallback:', geminiError.message || geminiError);
+      }
+    }
+
+    // 4. Fallback dictionary for common school/teacher phrases
     const fallbackDict: Record<string, string> = {
       'سلام': 'Hello',
       'سلام و خسته نباشید': 'Hello and more power to you',

@@ -101,6 +101,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
   } | null>(null);
   const [previousPersianText, setPreviousPersianText] = useState<string | null>(null);
   const [copiedTranslation, setCopiedTranslation] = useState(false);
+  const [translateToast, setTranslateToast] = useState<string | null>(null);
   const [messageTranslations, setMessageTranslations] = useState<Record<string, { translated: string; loading?: boolean }>>({});
 
   const handleTranslateInput = async (textToTranslate?: string, targetOverride?: 'en' | 'fa') => {
@@ -131,15 +132,21 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
       const target = hasPersian ? 'en' : 'fa';
       const original = inputText;
       const res = await api.translate(original.trim(), target);
-      setPreviousPersianText(original);
-      setInputText(res.translatedText);
-      setTranslationResult({
-        original,
-        translated: res.translatedText,
-        targetLang: target,
-      });
+      if (res && res.translatedText) {
+        setPreviousPersianText(original);
+        setInputText(res.translatedText);
+        setTranslationResult({
+          original,
+          translated: res.translatedText,
+          targetLang: target,
+        });
+        setTranslateToast(target === 'en' ? 'متن به انگلیسی ترجمه شد' : 'متن به فارسی ترجمه شد');
+        setTimeout(() => setTranslateToast(null), 3000);
+      }
     } catch (err: any) {
       console.warn('Quick translate error:', err);
+      setTranslateToast('خطا در ترجمه متن');
+      setTimeout(() => setTranslateToast(null), 3000);
     } finally {
       setIsTranslating(false);
     }
@@ -1253,20 +1260,26 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
             {/* Quick Live Translate Chip Bar when typing */}
             {inputText.trim().length > 0 && (
               <div className="flex items-center justify-between pb-1.5 px-0.5 text-[11px]">
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <button
                     type="button"
                     onClick={handleQuickTranslate}
                     disabled={isTranslating}
                     className="px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-indigo-300 font-semibold flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50 text-[11px]"
-                    title="ترجمه فوری کلمات تایپ شده به انگلیسی"
+                    title="ترجمه فوری کلمات تایپ شده"
                   >
                     {isTranslating ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-400" />
                     ) : (
                       <Languages className="w-3.5 h-3.5 text-indigo-400" />
                     )}
-                    <span>ترجمه به انگلیسی</span>
+                    <span>
+                      {isTranslating
+                        ? 'در حال ترجمه...'
+                        : /[\u0600-\u06FF]/.test(inputText)
+                        ? 'ترجمه به انگلیسی'
+                        : 'ترجمه به فارسی'}
+                    </span>
                   </button>
 
                   {previousPersianText && (
@@ -1277,11 +1290,18 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                         setPreviousPersianText(null);
                       }}
                       className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center gap-1 text-[10px] transition-all"
-                      title="بازگردانی متن اولیه فارسی"
+                      title="بازگردانی متن اولیه"
                     >
                       <RotateCcw className="w-2.5 h-2.5 text-slate-400" />
-                      <span>بازگردانی فارسی</span>
+                      <span>بازگردانی متن قبلی</span>
                     </button>
+                  )}
+
+                  {translateToast && (
+                    <span className="text-[10px] text-emerald-400 font-bold animate-in fade-in flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-md">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                      {translateToast}
+                    </span>
                   )}
                 </div>
 
