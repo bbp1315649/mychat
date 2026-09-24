@@ -1,7 +1,7 @@
 /**
  * Speech to Text (Voice to Written Text / تبدیل گفتار به متن)
  * Uses Web Speech API (SpeechRecognition / webkitSpeechRecognition)
- * with Persian (fa-IR) support and fallback simulations for schools.
+ * with Persian (fa-IR) support, anti-repetition deduplication, and fallback simulations.
  */
 
 export interface SpeechRecognitionController {
@@ -32,12 +32,70 @@ export function isSpeechRecognitionSupported(): boolean {
   return !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
 }
 
+/**
+ * Remove immediate consecutive duplicate words, phrases, and repeated clauses
+ * which can occur due to speech engine echoes or rapid browser callbacks.
+ */
+export function deduplicateSpokenText(text: string): string {
+  if (!text) return '';
+  let current = text.replace(/\s+/g, ' ').trim();
+  let prev = '';
+  let iterations = 0;
+
+  while (current !== prev && iterations < 5) {
+    prev = current;
+    iterations++;
+
+    // 1. Check if the entire string consists of 2 identical halves
+    const half = Math.floor(current.length / 2);
+    for (let len = half; len >= 3; len--) {
+      const chunk = current.slice(0, len).trim();
+      if (chunk.length >= 3 && current === `${chunk} ${chunk}`) {
+        current = chunk;
+        break;
+      }
+    }
+
+    // 2. Remove consecutive repeated word sequences of length 1 to 10 words
+    const words = current.split(' ').filter(Boolean);
+    let i = 0;
+    const result: string[] = [];
+
+    while (i < words.length) {
+      let matched = false;
+      const maxPhraseLen = Math.min(10, Math.floor((words.length - i) / 2));
+
+      for (let phraseLen = maxPhraseLen; phraseLen >= 1; phraseLen--) {
+        const phrase1 = words.slice(i, i + phraseLen).join(' ');
+        const phrase2 = words.slice(i + phraseLen, i + 2 * phraseLen).join(' ');
+
+        if (phrase1.toLowerCase() === phrase2.toLowerCase()) {
+          for (let k = 0; k < phraseLen; k++) {
+            result.push(words[i + k]);
+          }
+          i += 2 * phraseLen;
+          matched = true;
+          break;
+        }
+      }
+
+      if (!matched) {
+        result.push(words[i]);
+        i++;
+      }
+    }
+
+    current = result.join(' ').trim();
+  }
+
+  return current;
+}
+
 export function startSpeechToText(options: SpeechRecognitionOptions): SpeechRecognitionController {
   const SpeechRec = (typeof window !== 'undefined' && ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)) || null;
 
   let recognition: any = null;
   let isCancelled = false;
-  let accumulatedTranscript = '';
 
   if (SpeechRec) {
     try {
@@ -49,26 +107,28 @@ export function startSpeechToText(options: SpeechRecognitionOptions): SpeechReco
 
       recognition.onresult = (event: any) => {
         if (isCancelled) return;
-        let interim = '';
-        let finalSection = '';
 
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          const res = event.results[i];
-          const text = res[0]?.transcript || '';
-          if (res.isFinal) {
-            finalSection += text + ' ';
+        let finalTranscript = '';
+        let interimTranscript = '';
+
+        // Web Speech API standard: calculate current state from all results in event.results
+        // DO NOT additively append to an external accumulator on every event, as Chrome
+        // re-sends or updates the results list and will cause sentences to repeat!
+        for (let i = 0; i < event.results.length; ++i) {
+          const item = event.results[i];
+          const chunk = item[0]?.transcript || '';
+          if (item.isFinal) {
+            finalTranscript += chunk + ' ';
           } else {
-            interim += text;
+            interimTranscript += chunk;
           }
         }
 
-        if (finalSection) {
-          accumulatedTranscript += finalSection;
-        }
+        const rawCombined = (finalTranscript + interimTranscript).trim();
+        const cleaned = deduplicateSpokenText(rawCombined);
 
-        const fullText = (accumulatedTranscript + interim).trim();
-        if (fullText) {
-          options.onResult(fullText, !!finalSection && !interim);
+        if (cleaned) {
+          options.onResult(cleaned, !interimTranscript);
         }
       };
 

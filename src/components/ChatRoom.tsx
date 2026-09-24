@@ -286,6 +286,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
   const [micNotice, setMicNotice] = useState<string | null>(null);
   const [speechTranscript, setSpeechTranscript] = useState<string>('');
   const speechControllerRef = useRef<SpeechRecognitionController | null>(null);
+  const voiceTypingInitialTextRef = useRef<string>('');
   const [isVoiceTyping, setIsVoiceTyping] = useState<boolean>(false);
   const [showVoiceTemplates, setShowVoiceTemplates] = useState<boolean>(false);
 
@@ -538,24 +539,30 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
         speechControllerRef.current = null;
       }
       setIsVoiceTyping(false);
+      voiceTypingInitialTextRef.current = '';
     } else {
       setIsVoiceTyping(true);
+      voiceTypingInitialTextRef.current = inputText.trim();
       const controller = startSpeechToText({
         lang: 'fa-IR',
         onResult: (transcript) => {
-          setInputText(transcript);
+          const initial = voiceTypingInitialTextRef.current;
+          setInputText(initial ? `${initial} ${transcript}` : transcript);
         },
         onError: (err) => {
           console.warn('Voice typing error:', err);
           setIsVoiceTyping(false);
+          voiceTypingInitialTextRef.current = '';
         },
         onEnd: () => {
           setIsVoiceTyping(false);
+          voiceTypingInitialTextRef.current = '';
         }
       });
       speechControllerRef.current = controller;
       if (!controller.isSupported) {
         setIsVoiceTyping(false);
+        voiceTypingInitialTextRef.current = '';
         alert('مرورگر شما از تایپ صوتی خودکار پشتیبانی نمی‌کند یا دسترسی به میکروفون محدود است.');
       }
     }
