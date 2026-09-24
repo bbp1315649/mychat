@@ -220,6 +220,63 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
   const [isSending, setIsSending] = useState(false);
   const [cameraModalMode, setCameraModalMode] = useState<'photo' | 'video'>('photo');
   const [showStickerDrawer, setShowStickerDrawer] = useState(false);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [copiedToastText, setCopiedToastText] = useState<string | null>(null);
+  const longPressTimerRef = useRef<any>(null);
+  const isLongPressTriggeredRef = useRef<boolean>(false);
+
+  // Copy text to clipboard with haptic feedback & animated toast
+  // Requirement: "میخوام متن هایی که ارسال میشه . در چت با نگه داشتن دست روی متن کپی شود"
+  const handleCopyMessageText = (text: string, messageId: string) => {
+    if (!text) return;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+
+      // Haptic feedback if supported on mobile
+      if (typeof window !== 'undefined' && window.navigator && window.navigator.vibrate) {
+        try {
+          window.navigator.vibrate(50);
+        } catch {
+          // ignore
+        }
+      }
+
+      setCopiedMessageId(messageId);
+      setCopiedToastText('متن پیام کپی شد');
+      setTimeout(() => {
+        setCopiedMessageId(null);
+        setCopiedToastText(null);
+      }, 2000);
+    } catch (err) {
+      console.warn('Failed to copy text:', err);
+    }
+  };
+
+  // Long-press start handler for touch & mouse
+  const handleStartLongPress = (text: string, messageId: string) => {
+    isLongPressTriggeredRef.current = false;
+    clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = setTimeout(() => {
+      isLongPressTriggeredRef.current = true;
+      handleCopyMessageText(text, messageId);
+    }, 500); // 500ms standard long-press duration
+  };
+
+  // Long-press cancel handler
+  const handleCancelLongPress = () => {
+    clearTimeout(longPressTimerRef.current);
+  };
 
   // Send photo captured via camera or selected from device
   const handleSendPhoto = async (photoDataUrl: string, caption: string, fileName?: string) => {
@@ -845,9 +902,31 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                   </div>
                 )}
 
-                {/* Message Bubble - Thinner subtle frame for media, sticker support */}
+                {/* Message Bubble - Thinner subtle frame for media, sticker support, with long-press to copy */}
                 <div
-                  className={`max-w-[85%] rounded-2xl shadow-md relative transition-all ${
+                  onMouseDown={() => {
+                    const textToCopy = msg.content || msg.voiceTranscript || '';
+                    if (textToCopy) handleStartLongPress(textToCopy, msg.id);
+                  }}
+                  onMouseUp={handleCancelLongPress}
+                  onMouseLeave={handleCancelLongPress}
+                  onTouchStart={() => {
+                    const textToCopy = msg.content || msg.voiceTranscript || '';
+                    if (textToCopy) handleStartLongPress(textToCopy, msg.id);
+                  }}
+                  onTouchEnd={handleCancelLongPress}
+                  onTouchCancel={handleCancelLongPress}
+                  onContextMenu={(e) => {
+                    // Prevent default context menu on long press and trigger copy
+                    const textToCopy = msg.content || msg.voiceTranscript || '';
+                    if (textToCopy && !isMedia) {
+                      e.preventDefault();
+                      handleCopyMessageText(textToCopy, msg.id);
+                    }
+                  }}
+                  className={`max-w-[85%] rounded-2xl shadow-md relative transition-all cursor-pointer select-text ${
+                    copiedMessageId === msg.id ? 'ring-2 ring-emerald-400 scale-[1.01]' : ''
+                  } ${
                     isMedia ? 'p-1.5' : isSticker ? 'p-1 bg-transparent shadow-none' : 'p-3'
                   } ${
                     msg.type === 'announcement'
@@ -1108,6 +1187,25 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                   >
                     <Reply className="w-3 h-3" />
                   </button>
+
+                  {/* Copy message button */}
+                  {(msg.content || msg.voiceTranscript) && !isSticker && (
+                    <button
+                      onClick={() => handleCopyMessageText(msg.content || msg.voiceTranscript || '', msg.id)}
+                      className={`p-1 rounded transition-colors ${
+                        copiedMessageId === msg.id
+                          ? 'text-emerald-400 bg-emerald-500/20'
+                          : 'hover:text-slate-200 hover:bg-slate-800'
+                      }`}
+                      title="کپی متن پیام (یا نگه داشتن دست روی متن)"
+                    >
+                      {copiedMessageId === msg.id ? (
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
+                    </button>
+                  )}
 
                   {/* Translation action button for text messages */}
                   {msg.content && msg.type !== 'voice' && !isSticker && (
@@ -2016,6 +2114,16 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
         caption={activeLightboxImage?.caption}
         timestamp={activeLightboxImage?.timestamp}
       />
+
+      {/* Copy Feedback Toast Banner */}
+      {copiedToastText && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 pointer-events-none animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-slate-900/95 backdrop-blur-md border border-emerald-500/40 text-emerald-300 shadow-2xl px-4 py-2 rounded-2xl flex items-center gap-2 text-xs font-bold shadow-emerald-950/50">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>{copiedToastText}</span>
+          </div>
+        </div>
+      )}
 
       {/* Delete Message Confirmation Modal (No window.confirm, safe for all iframes) */}
       {deleteConfirmMsg && (
