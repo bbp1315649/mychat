@@ -323,7 +323,7 @@ app.get('/api/groups', async (req, res) => {
 // Requirement: "مدیر قابلیت تعریف گروه ... داشته باشد"
 app.post(['/api/admin/groups', '/api/groups'], async (req, res) => {
   try {
-    const { name, description, memberIds = [], isAnnouncementOnly = false, avatar } = req.body;
+    const { name, description, memberIds = [], isAnnouncementOnly = false, autoDeleteHours = 0, avatar } = req.body;
 
     if (!name || name.trim().length === 0) {
       return res.status(400).json({ error: 'نام گروه الزامی است' });
@@ -338,6 +338,7 @@ app.post(['/api/admin/groups', '/api/groups'], async (req, res) => {
       avatar,
       memberIds,
       isAnnouncementOnly: Boolean(isAnnouncementOnly),
+      autoDeleteHours: Number(autoDeleteHours) || 0,
       createdBy: principalId,
     });
 
@@ -512,6 +513,52 @@ app.delete('/api/messages/:id', async (req, res) => {
   } catch (error: any) {
     console.error('Delete message error:', error);
     res.status(500).json({ error: 'خطا در حذف پیام' });
+  }
+});
+
+// 11.6. Clear entire chat history for a group or conversation
+// Requirement: "مدیر این امکان را داشته باشد که سابقه چت ها رو پاک کند یا مدت تنظیم کند اتومات حذف شود"
+app.post('/api/chats/:chatId/clear-history', async (req, res) => {
+  try {
+    const { chatId } = req.params;
+    const { userId } = req.body;
+    if (!userId) {
+      return res.status(400).json({ error: 'شناسه مدیر الزامی است' });
+    }
+
+    const result = await DatabaseRepository.clearChatHistory(chatId, userId);
+    if (!result.success) {
+      return res.status(403).json({ error: result.error || 'خطا در پاکسازی سابقه گفتگو' });
+    }
+
+    broadcast('chat:cleared', { chatId, deletedCount: result.deletedCount });
+    res.json({ success: true, chatId, deletedCount: result.deletedCount });
+  } catch (error: any) {
+    console.error('Clear chat history error:', error);
+    res.status(500).json({ error: 'خطا در پاکسازی سابقه گفتگو' });
+  }
+});
+
+// 11.7. Set auto-delete duration (TTL) for a group
+// Requirement: "مدیر این امکان را داشته باشد که سابقه چت ها رو پاک کند یا مدت تنظیم کند اتومات حذف شود"
+app.post('/api/groups/:groupId/auto-delete', async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const { autoDeleteHours, userId } = req.body;
+    if (!userId) {
+      return res.status(400).json({ error: 'شناسه مدیر الزامی است' });
+    }
+
+    const result = await DatabaseRepository.updateGroupAutoDelete(groupId, Number(autoDeleteHours) || 0, userId);
+    if (!result.success) {
+      return res.status(403).json({ error: result.error || 'خطا در تنظیم حذف خودکار' });
+    }
+
+    broadcast('group:auto-delete-updated', { groupId, autoDeleteHours: Number(autoDeleteHours) || 0 });
+    res.json({ success: true, groupId, autoDeleteHours: Number(autoDeleteHours) || 0 });
+  } catch (error: any) {
+    console.error('Update auto-delete error:', error);
+    res.status(500).json({ error: 'خطا در تنظیم حذف خودکار' });
   }
 });
 
@@ -743,6 +790,18 @@ server.on('error', (err: any) => {
 // Start listening immediately on port 3000
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`School Chat Server listening at http://0.0.0.0:${PORT}`);
+  
+  // Background interval: purge expired auto-delete messages every 30 seconds
+  setInterval(async () => {
+    try {
+      const purged = await DatabaseRepository.purgeExpiredMessages();
+      if (purged > 0) {
+        broadcast('chat:auto-purged', { purgedCount: purged });
+      }
+    } catch (e) {
+      console.warn('Auto-purge interval error:', e);
+    }
+  }, 30000);
 });
 
 async function setupViteOrStatic() {

@@ -92,6 +92,7 @@ export class DatabaseRepository {
     avatar?: string;
     memberIds?: string[];
     isAnnouncementOnly?: boolean;
+    autoDeleteHours?: number;
     createdBy: string;
   }): Promise<Group> {
     return fileDb.createGroup(groupData);
@@ -151,5 +152,17 @@ export class DatabaseRepository {
 
   static async deleteMessage(messageId: string, requestingUserId: string): Promise<{ success: boolean; chatId?: string; error?: string }> {
     return fileDb.deleteMessage(messageId, requestingUserId);
+  }
+
+  static async clearChatHistory(chatId: string, requestingUserId: string): Promise<{ success: boolean; deletedCount: number; error?: string }> {
+    return fileDb.clearChatHistory(chatId, requestingUserId);
+  }
+
+  static async updateGroupAutoDelete(groupId: string, autoDeleteHours: number, requestingUserId: string): Promise<{ success: boolean; error?: string }> {
+    return fileDb.updateGroupAutoDelete(groupId, autoDeleteHours, requestingUserId);
+  }
+
+  static async purgeExpiredMessages(): Promise<number> {
+    return fileDb.purgeExpiredMessages();
   }
 }

@@ -21,7 +21,10 @@ import {
   Megaphone,
   UserPlus,
   Trash2,
-  UserMinus
+  UserMinus,
+  Timer,
+  Eraser,
+  AlertTriangle
 } from 'lucide-react';
 
 interface AdminPanelProps {
@@ -54,6 +57,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [newGroupName, setNewGroupName] = useState('');
   const [newGroupDesc, setNewGroupDesc] = useState('');
   const [newGroupIsAnnouncement, setNewGroupIsAnnouncement] = useState(false);
+  const [newGroupAutoDeleteHours, setNewGroupAutoDeleteHours] = useState<number>(0);
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [createGroupLoading, setCreateGroupLoading] = useState(false);
   const [createGroupSuccess, setCreateGroupSuccess] = useState<string | null>(null);
@@ -66,6 +70,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [saveMembersLoading, setSaveMembersLoading] = useState(false);
   const [saveMembersSuccess, setSaveMembersSuccess] = useState<string | null>(null);
 
+  // Group History and Auto-delete states in Admin Panel
+  const [adminClearHistoryLoading, setAdminClearHistoryLoading] = useState(false);
+  const [adminClearConfirmGroup, setAdminClearConfirmGroup] = useState<Group | null>(null);
+  const [adminAutoDeleteHours, setAdminAutoDeleteHours] = useState<number>(groups[0]?.autoDeleteHours || 0);
+  const [adminAutoDeleteLoading, setAdminAutoDeleteLoading] = useState(false);
+
   // Add staff directly state
   const [directName, setDirectName] = useState('');
   const [directCode, setDirectCode] = useState('');
@@ -75,12 +85,44 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [addStaffLoading, setAddStaffLoading] = useState(false);
   const [addStaffMessage, setAddStaffMessage] = useState<string | null>(null);
 
-  // Sync group member ids when selected group changes
+  // Sync group member ids and auto delete settings when selected group changes
   const handleSelectGroupForMembers = (gId: string) => {
     setSelectedGroupId(gId);
     const grp = groups.find(g => g.id === gId);
     if (grp) {
       setCurrentGroupMemberIds([...grp.memberIds]);
+      setAdminAutoDeleteHours(grp.autoDeleteHours || 0);
+    }
+  };
+
+  // Principal clears chat history for a group in Admin Panel
+  // Requirement: "مدیر این امکان را داشته باشد که سابقه چت ها رو پاک کند یا مدت تنظیم کند اتومات حذف شود"
+  const handleAdminClearHistory = async (group: Group) => {
+    setAdminClearHistoryLoading(true);
+    try {
+      const res = await api.clearChatHistory(group.id, currentUser.id);
+      setAdminClearConfirmGroup(null);
+      setSaveMembersSuccess(`سابقه پیام‌های گروه «${group.name}» (${res.deletedCount} پیام) به طور کامل پاکسازی شد.`);
+      setTimeout(() => setSaveMembersSuccess(null), 4000);
+    } catch (err: any) {
+      alert(err.message || 'خطا در پاکسازی سابقه گفتگو');
+    } finally {
+      setAdminClearHistoryLoading(false);
+    }
+  };
+
+  // Principal updates auto delete duration for a group in Admin Panel
+  const handleAdminSaveAutoDelete = async (groupId: string) => {
+    setAdminAutoDeleteLoading(true);
+    try {
+      await api.setGroupAutoDelete(groupId, adminAutoDeleteHours, currentUser.id);
+      onRefreshGroups();
+      setSaveMembersSuccess('تنظیمات حذف خودکار پیام‌ها با موفقیت ذخیره گردید.');
+      setTimeout(() => setSaveMembersSuccess(null), 4000);
+    } catch (err: any) {
+      alert(err.message || 'خطا در ذخیره تنظیمات حذف خودکار');
+    } finally {
+      setAdminAutoDeleteLoading(false);
     }
   };
 
@@ -128,6 +170,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         description: newGroupDesc.trim() || 'گروه دبیران آموزشگاه',
         memberIds: selectedMemberIds,
         isAnnouncementOnly: newGroupIsAnnouncement,
+        autoDeleteHours: newGroupAutoDeleteHours,
       });
 
       onGroupCreated(created);
@@ -135,6 +178,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setNewGroupName('');
       setNewGroupDesc('');
       setNewGroupIsAnnouncement(false);
+      setNewGroupAutoDeleteHours(0);
       setSelectedMemberIds([]);
       setTimeout(() => setCreateGroupSuccess(null), 4000);
     } catch (err: any) {
@@ -534,6 +578,33 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               />
             </div>
 
+            {/* Auto-delete option for new group */}
+            <div className="p-3 bg-slate-900 border border-slate-800 rounded-xl space-y-1.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Timer className="w-4 h-4 text-amber-400" />
+                  <div>
+                    <div className="text-xs font-semibold text-slate-200">حذف خودکار پیام‌ها</div>
+                    <div className="text-[10px] text-slate-400">تنظیم انقضا و پاکسازی دوره‌ای پیام‌ها</div>
+                  </div>
+                </div>
+              </div>
+              <select
+                value={newGroupAutoDeleteHours}
+                onChange={(e) => setNewGroupAutoDeleteHours(Number(e.target.value))}
+                className="w-full bg-slate-950 border border-slate-700/80 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+              >
+                <option value={0}>غیرفعال (پیام‌ها بدون محدودیت زمانی ذخیره شوند)</option>
+                <option value={1}>حذف خودکار پس از ۱ ساعت</option>
+                <option value={6}>حذف خودکار پس از ۶ ساعت</option>
+                <option value={12}>حذف خودکار پس از ۱۲ ساعت</option>
+                <option value={24}>حذف خودکار پس از ۲۴ ساعت (۱ روز)</option>
+                <option value={48}>حذف خودکار پس از ۴۸ ساعت (۲ روز)</option>
+                <option value={168}>حذف خودکار پس از ۷ روز (یک هفته)</option>
+                <option value={720}>حذف خودکار پس از ۳۰ روز (یک ماه)</option>
+              </select>
+            </div>
+
             {/* Members Selector */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
@@ -718,6 +789,86 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
             </div>
 
+            {/* Chat History & Auto-Delete Management Card for Selected Group */}
+            {/* Requirement: "مدیر این امکان را داشته باشد که سابقه چت ها رو پاک کند یا مدت تنظیم کند اتومات حذف شود" */}
+            {(() => {
+              const currentGroup = groups.find(g => g.id === selectedGroupId);
+              if (!currentGroup) return null;
+              return (
+                <div className="p-3 bg-slate-900/90 border border-slate-800 rounded-2xl space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center">
+                        <Timer className="w-3.5 h-3.5" />
+                      </div>
+                      <span className="text-xs font-bold text-slate-200">
+                        تنظیمات سابقه و حذف خودکار پیام‌ها ({currentGroup.name})
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Auto Delete Duration selector */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] text-slate-300 flex items-center justify-between">
+                      <span>مدت زمان نگهداری پیام‌ها (حذف خودکار پس از انقضا):</span>
+                      <span className="text-amber-400 font-bold text-[10px]">
+                        {adminAutoDeleteHours === 0 ? 'خاموش (بدون حذف)' : `${adminAutoDeleteHours} ساعت`}
+                      </span>
+                    </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[10px]">
+                      {[
+                        { hours: 0, label: 'خاموش' },
+                        { hours: 1, label: '۱ ساعت' },
+                        { hours: 6, label: '۶ ساعت' },
+                        { hours: 12, label: '۱۲ ساعت' },
+                        { hours: 24, label: '۲۴ ساعت (۱ روز)' },
+                        { hours: 48, label: '۴۸ ساعت (۲ روز)' },
+                        { hours: 168, label: '۷ روز (یک هفته)' },
+                        { hours: 720, label: '۳۰ روز (یک ماه)' },
+                      ].map((opt) => (
+                        <button
+                          key={opt.hours}
+                          type="button"
+                          onClick={() => setAdminAutoDeleteHours(opt.hours)}
+                          className={`p-1.5 rounded-lg border text-center transition-all ${
+                            adminAutoDeleteHours === opt.hours
+                              ? 'bg-amber-500/20 border-amber-500/60 text-amber-300 font-bold'
+                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-850'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleAdminSaveAutoDelete(currentGroup.id)}
+                      disabled={adminAutoDeleteLoading}
+                      className="w-full mt-1.5 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>{adminAutoDeleteLoading ? 'در حال ثبت تنظیمات...' : 'اعمال و ذخیره مدت حذف خودکار'}</span>
+                    </button>
+                  </div>
+
+                  {/* Clear All Chat History button */}
+                  <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
+                    <div className="text-[11px] text-slate-400">
+                      پاکسازی کامل پیام‌ها، فایل‌ها و ویس‌های این گروه:
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAdminClearConfirmGroup(currentGroup)}
+                      className="py-1.5 px-3 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 hover:text-rose-200 border border-rose-500/30 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-all"
+                    >
+                      <Eraser className="w-3.5 h-3.5" />
+                      <span>پاکسازی کل سابقه</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
             <button
               onClick={handleSaveMembers}
               disabled={saveMembersLoading}
@@ -826,6 +977,45 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               {addStaffLoading ? 'در حال ثبت همکار...' : 'ثبت همکار در سامانه'}
             </button>
           </form>
+        )}
+
+        {/* Modal for Group Chat History Clear Confirmation in Admin Panel */}
+        {adminClearConfirmGroup && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-slate-900 border border-rose-500/40 rounded-3xl p-5 max-w-sm w-full shadow-2xl text-center space-y-4 animate-in fade-in zoom-in-95 duration-150">
+              <div className="w-12 h-12 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center mx-auto text-rose-400">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-slate-100">پاکسازی سابقه گروه</h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  آیا از حذف تمامی پیام‌های ردوبدل شده در گروه «<span className="font-bold text-white">{adminClearConfirmGroup.name}</span>» اطمینان دارید؟
+                </p>
+                <p className="text-[11px] text-rose-400/90 bg-rose-950/40 border border-rose-900/50 rounded-xl p-2 mt-2">
+                  تمامی پیام‌ها، تصاویر، صداها و فایل‌های این گروه بلافاصله برای تمامی اعضا پاکسازی خواهند شد.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => handleAdminClearHistory(adminClearConfirmGroup)}
+                  disabled={adminClearHistoryLoading}
+                  className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-rose-600/20 transition-all disabled:opacity-50"
+                >
+                  <Eraser className="w-3.5 h-3.5" />
+                  <span>{adminClearHistoryLoading ? 'در حال پاکسازی...' : 'تأیید و پاکسازی کامل'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAdminClearConfirmGroup(null)}
+                  disabled={adminClearHistoryLoading}
+                  className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition-colors"
+                >
+                  انصراف
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Modal for User Deletion Confirmation (No window.confirm, safe for all iframes) */}

@@ -23,6 +23,7 @@ export interface Group {
   memberIds: string[];
   adminIds: string[];
   isAnnouncementOnly?: boolean; // Only principal/admin can post
+  autoDeleteHours?: number; // 0 = off, 1 = 1 hour, 24 = 24 hours, 168 = 7 days, 720 = 30 days
   createdAt: string;
 }
 

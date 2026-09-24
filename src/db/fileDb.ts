@@ -21,6 +21,7 @@ export interface DbSchema {
     description: string;
     avatar: string;
     isAnnouncementOnly: boolean;
+    autoDeleteHours?: number;
     createdBy: string;
     createdAt: string;
   }>;
@@ -514,6 +515,7 @@ class FileDatabaseEngine {
         memberIds,
         adminIds: [g.createdBy || 'u_principal'],
         isAnnouncementOnly: g.isAnnouncementOnly,
+        autoDeleteHours: g.autoDeleteHours || 0,
         createdBy: g.createdBy,
         createdAt: g.createdAt,
       });
@@ -527,6 +529,7 @@ class FileDatabaseEngine {
     avatar?: string;
     memberIds?: string[];
     isAnnouncementOnly?: boolean;
+    autoDeleteHours?: number;
     createdBy: string;
   }): Group {
     const newId = 'g_' + Date.now();
@@ -539,6 +542,7 @@ class FileDatabaseEngine {
       description: groupData.description || 'گروه گفتگوی کادر مدرسه',
       avatar,
       isAnnouncementOnly: Boolean(groupData.isAnnouncementOnly),
+      autoDeleteHours: Number(groupData.autoDeleteHours) || 0,
       createdBy: groupData.createdBy,
       createdAt,
     };
@@ -560,6 +564,7 @@ class FileDatabaseEngine {
       memberIds: members,
       adminIds: [groupData.createdBy],
       isAnnouncementOnly: newGroup.isAnnouncementOnly,
+      autoDeleteHours: newGroup.autoDeleteHours,
       createdBy: newGroup.createdBy,
       createdAt: newGroup.createdAt,
     };
@@ -768,6 +773,85 @@ class FileDatabaseEngine {
     this.save();
 
     return { success: true, chatId };
+  }
+
+  // Clear entire chat history for a group or direct chat (Principal or group admin only)
+  // Requirement: "مدیر این امکان را داشته باشد که سابقه چت ها رو پاک کند یا مدت تنظیم کند اتومات حذف شود"
+  public clearChatHistory(chatId: string, requestingUserId: string): { success: boolean; deletedCount: number; error?: string } {
+    const user = this.data.users.find(u => u.id === requestingUserId);
+    if (!user) {
+      return { success: false, deletedCount: 0, error: 'کاربر نامعتبر است' };
+    }
+
+    if (user.role !== 'principal') {
+      return { success: false, deletedCount: 0, error: 'تنها مدیر آموزشگاه دسترسی پاکسازی سابقه گفتگو را دارد' };
+    }
+
+    const initialCount = this.data.messages.length;
+    const targetMessageIds = new Set(
+      this.data.messages.filter(m => m.chatId === chatId).map(m => m.id)
+    );
+
+    this.data.messages = this.data.messages.filter(m => m.chatId !== chatId);
+    this.data.reactions = this.data.reactions.filter(r => !targetMessageIds.has(r.messageId));
+    this.save();
+
+    const deletedCount = initialCount - this.data.messages.length;
+    return { success: true, deletedCount };
+  }
+
+  // Set Auto-Delete duration (TTL) for a group or chat
+  public updateGroupAutoDelete(groupId: string, autoDeleteHours: number, requestingUserId: string): { success: boolean; error?: string } {
+    const user = this.data.users.find(u => u.id === requestingUserId);
+    if (!user || user.role !== 'principal') {
+      return { success: false, error: 'تنها مدیر آموزشگاه دسترسی تنظیم حذف خودکار پیام‌ها را دارد' };
+    }
+
+    const group = this.data.groups.find(g => g.id === groupId);
+    if (!group) {
+      return { success: false, error: 'گروه مورد نظر یافت نشد' };
+    }
+
+    group.autoDeleteHours = Number(autoDeleteHours) || 0;
+    this.save();
+
+    // Trigger immediate cleanup of messages older than new autoDelete threshold
+    this.purgeExpiredMessages();
+
+    return { success: true };
+  }
+
+  // Periodic purge for auto-delete / expiring messages
+  public purgeExpiredMessages(): number {
+    const now = Date.now();
+    let totalPurged = 0;
+
+    // Check each group that has autoDeleteHours configured > 0
+    for (const group of this.data.groups) {
+      if (group.autoDeleteHours && group.autoDeleteHours > 0) {
+        const maxAgeMs = group.autoDeleteHours * 60 * 60 * 1000;
+        const cutoffTime = now - maxAgeMs;
+
+        const beforeCount = this.data.messages.length;
+        const expiredMsgIds = new Set(
+          this.data.messages
+            .filter(m => m.chatId === group.id && new Date(m.createdAt).getTime() < cutoffTime)
+            .map(m => m.id)
+        );
+
+        if (expiredMsgIds.size > 0) {
+          this.data.messages = this.data.messages.filter(m => !expiredMsgIds.has(m.id));
+          this.data.reactions = this.data.reactions.filter(r => !expiredMsgIds.has(r.messageId));
+          const removed = beforeCount - this.data.messages.length;
+          totalPurged += removed;
+        }
+      }
+    }
+
+    if (totalPurged > 0) {
+      this.save();
+    }
+    return totalPurged;
   }
 }
 

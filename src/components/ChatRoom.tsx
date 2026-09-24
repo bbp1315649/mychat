@@ -33,7 +33,12 @@ import {
   ArrowLeftRight,
   Copy,
   CheckCircle2,
-  RotateCcw
+  RotateCcw,
+  Clock,
+  Eraser,
+  Sliders,
+  AlertTriangle,
+  Timer
 } from 'lucide-react';
 import { CameraCaptureModal } from './CameraCaptureModal';
 import { ImageLightboxModal } from './ImageLightboxModal';
@@ -217,6 +222,11 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
   } | null>(null);
   const [showReactionPickerForId, setShowReactionPickerForId] = useState<string | null>(null);
   const [showGroupInfoModal, setShowGroupInfoModal] = useState(false);
+  const [showClearHistoryModal, setShowClearHistoryModal] = useState(false);
+  const [isClearingHistory, setIsClearingHistory] = useState(false);
+  const [showAutoDeleteModal, setShowAutoDeleteModal] = useState(false);
+  const [selectedAutoDeleteHours, setSelectedAutoDeleteHours] = useState<number>(groupData?.autoDeleteHours || 0);
+  const [isSavingAutoDelete, setIsSavingAutoDelete] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [cameraModalMode, setCameraModalMode] = useState<'photo' | 'video'>('photo');
   const [showStickerDrawer, setShowStickerDrawer] = useState(false);
@@ -397,6 +407,66 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
   const isPrincipal = currentUser.role === 'principal';
   const isAnnouncementGroup = isGroup && groupData?.isAnnouncementOnly;
   const canSend = !isAnnouncementGroup || isPrincipal || currentUser.role === 'deputy';
+
+  // Sync autoDeleteHours when groupData updates
+  useEffect(() => {
+    if (groupData && groupData.autoDeleteHours !== undefined) {
+      setSelectedAutoDeleteHours(groupData.autoDeleteHours);
+    }
+  }, [groupData?.autoDeleteHours]);
+
+  // Handle Clearing Chat History (Principal only)
+  // Requirement: "مدیر این امکان را داشته باشد که سابقه چت ها رو پاک کند یا مدت تنظیم کند اتومات حذف شود"
+  const handleConfirmClearHistory = async () => {
+    if (!isPrincipal) return;
+    setIsClearingHistory(true);
+    try {
+      await api.clearChatHistory(chatId, currentUser.id);
+      setShowClearHistoryModal(false);
+      setCopiedToastText('تمامی سابقه پیام‌های این گفتگو پاکسازی شد');
+      setTimeout(() => setCopiedToastText(null), 2500);
+    } catch (err: any) {
+      alert(err.message || 'خطا در پاکسازی سابقه گفتگو');
+    } finally {
+      setIsClearingHistory(false);
+    }
+  };
+
+  // Handle Setting Auto-Delete Duration (Principal only)
+  // Requirement: "مدیر این امکان را داشته باشد که سابقه چت ها رو پاک کند یا مدت تنظیم کند اتومات حذف شود"
+  const handleSaveAutoDelete = async () => {
+    if (!isPrincipal || !groupData) return;
+    setIsSavingAutoDelete(true);
+    try {
+      await api.setGroupAutoDelete(groupData.id, selectedAutoDeleteHours, currentUser.id);
+      groupData.autoDeleteHours = selectedAutoDeleteHours;
+      setShowAutoDeleteModal(false);
+      if (onRefreshGroups) onRefreshGroups();
+      setCopiedToastText(
+        selectedAutoDeleteHours === 0
+          ? 'حذف خودکار پیام‌ها غیرفعال شد'
+          : `حذف خودکار برای پیام‌های قدیمی‌تر از ${formatAutoDeleteHours(selectedAutoDeleteHours)} تنظیم شد`
+      );
+      setTimeout(() => setCopiedToastText(null), 3000);
+    } catch (err: any) {
+      alert(err.message || 'خطا در ذخیره تنظیمات حذف خودکار');
+    } finally {
+      setIsSavingAutoDelete(false);
+    }
+  };
+
+  // Helper to format auto delete duration in Persian
+  const formatAutoDeleteHours = (hours: number): string => {
+    if (!hours || hours === 0) return 'خاموش (بدون حذف)';
+    if (hours === 1) return '۱ ساعت';
+    if (hours === 6) return '۶ ساعت';
+    if (hours === 12) return '۱۲ ساعت';
+    if (hours === 24) return '۲۴ ساعت (۱ روز)';
+    if (hours === 48) return '۴۸ ساعت (۲ روز)';
+    if (hours === 168) return '۷ روز (یک هفته)';
+    if (hours === 720) return '۳۰ روز (یک ماه)';
+    return `${hours} ساعت`;
+  };
 
   // Filter and deduplicate messages for this chat to guarantee strictly unique keys
   const chatMessages = React.useMemo(() => {
@@ -826,15 +896,52 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
           </div>
         </div>
 
-        {isGroup && (
-          <button
-            onClick={() => setShowGroupInfoModal(true)}
-            className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200"
-            title="مشخصات و اعضای گروه"
-          >
-            <Info className="w-4 h-4" />
-          </button>
-        )}
+        <div className="flex items-center gap-1">
+          {/* Principal Special Tools: Clear Chat History & Auto-Delete Settings */}
+          {isPrincipal && (
+            <>
+              {isGroup && (
+                <button
+                  type="button"
+                  onClick={() => setShowAutoDeleteModal(true)}
+                  className={`p-1.5 rounded-lg border transition-all flex items-center gap-1 text-[11px] ${
+                    groupData?.autoDeleteHours && groupData.autoDeleteHours > 0
+                      ? 'bg-amber-500/20 border-amber-500/40 text-amber-300 font-bold'
+                      : 'bg-slate-800/80 hover:bg-slate-800 text-slate-300 hover:text-white border-slate-700/60'
+                  }`}
+                  title="تنظیم مدت زمان حذف خودکار پیام‌ها"
+                >
+                  <Timer className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">
+                    {groupData?.autoDeleteHours && groupData.autoDeleteHours > 0
+                      ? `حذف خودکار: ${formatAutoDeleteHours(groupData.autoDeleteHours)}`
+                      : 'حذف خودکار'}
+                  </span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setShowClearHistoryModal(true)}
+                className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-200 border border-rose-500/30 transition-all flex items-center gap-1 text-[11px]"
+                title="پاکسازی سابقه پیام‌های این گفتگو توسط مدیر"
+              >
+                <Eraser className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">پاکسازی تاریخچه</span>
+              </button>
+            </>
+          )}
+
+          {isGroup && (
+            <button
+              onClick={() => setShowGroupInfoModal(true)}
+              className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200"
+              title="مشخصات و اعضای گروه"
+            >
+              <Info className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Pinned Message Bar */}
@@ -2085,6 +2192,47 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
               </div>
             </div>
 
+            {/* Principal Admin Controls inside Group Info */}
+            {isPrincipal && (
+              <div className="mb-3 pt-2 border-t border-slate-800/80 space-y-2">
+                <div className="text-[11px] font-semibold text-amber-300 flex items-center gap-1">
+                  <Crown className="w-3.5 h-3.5 text-amber-400" />
+                  <span>تنظیمات ویژه مدیر:</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowGroupInfoModal(false);
+                      setShowAutoDeleteModal(true);
+                    }}
+                    className="p-2 rounded-xl bg-slate-800/90 hover:bg-slate-800 border border-slate-700/70 text-[11px] text-amber-200 hover:text-amber-100 flex flex-col items-center gap-1 transition-all"
+                  >
+                    <Timer className="w-4 h-4 text-amber-400" />
+                    <span>تنظیم حذف خودکار</span>
+                    <span className="text-[9px] text-slate-400">
+                      {groupData.autoDeleteHours && groupData.autoDeleteHours > 0
+                        ? formatAutoDeleteHours(groupData.autoDeleteHours)
+                        : 'غیرفعال'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowGroupInfoModal(false);
+                      setShowClearHistoryModal(true);
+                    }}
+                    className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-[11px] text-rose-300 hover:text-rose-100 flex flex-col items-center gap-1 transition-all"
+                  >
+                    <Eraser className="w-4 h-4 text-rose-400" />
+                    <span>پاکسازی سابقه گفتگو</span>
+                    <span className="text-[9px] text-rose-400/70">حذف تمامی پیام‌ها</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             <button
               onClick={() => setShowGroupInfoModal(false)}
               className="w-full py-2 bg-slate-800 hover:bg-slate-750 text-slate-200 text-xs font-medium rounded-xl"
@@ -2154,6 +2302,163 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                 type="button"
                 onClick={() => setDeleteConfirmMsg(null)}
                 disabled={isDeletingMsg}
+                className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition-colors"
+              >
+                انصراف
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear Entire Chat History Confirmation Modal (Principal Only) */}
+      {/* Requirement: "مدیر این امکان را داشته باشد که سابقه چت ها رو پاک کند یا مدت تنظیم کند اتومات حذف شود" */}
+      {showClearHistoryModal && isPrincipal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-rose-500/30 rounded-3xl p-5 max-w-sm w-full shadow-2xl text-center space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-13 h-13 rounded-2xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center mx-auto text-rose-400">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-slate-100 flex items-center justify-center gap-1.5">
+                <span>پاکسازی کامل سابقه گفتگو</span>
+                <Crown className="w-4 h-4 text-amber-400" />
+              </h4>
+              <p className="text-xs text-slate-300 mt-2 leading-relaxed">
+                آیا از پاک کردن تمامی پیام‌های ردوبدل شده در <strong className="text-white font-semibold">«{chatTitle}»</strong> اطمینان دارید؟
+              </p>
+              <p className="text-[11px] text-rose-400/90 mt-1.5 bg-rose-950/40 border border-rose-900/50 rounded-xl p-2">
+                ⚠️ توجه: تمامی متن‌ها، صداها، تصاویر و فایل‌های این گفتگو برای کلیه اعضا بلافاصله و برای همیشه حذف خواهد شد.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleConfirmClearHistory}
+                disabled={isClearingHistory}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-rose-600/30 transition-all disabled:opacity-50"
+              >
+                {isClearingHistory ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>در حال پاکسازی...</span>
+                  </>
+                ) : (
+                  <>
+                    <Eraser className="w-4 h-4" />
+                    <span>تأیید و پاکسازی کامل سابقه</span>
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowClearHistoryModal(false)}
+                disabled={isClearingHistory}
+                className="py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition-colors"
+              >
+                انصراف
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Auto-Delete (Self-Destruct) Settings Modal (Principal Only) */}
+      {/* Requirement: "مدیر این امکان را داشته باشد که سابقه چت ها رو پاک کند یا مدت تنظیم کند اتومات حذف شود" */}
+      {showAutoDeleteModal && isPrincipal && isGroup && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-amber-500/30 rounded-3xl p-5 max-w-sm w-full shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                  <Timer className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-slate-100 flex items-center gap-1">
+                    <span>تنظیم زمان حذف خودکار پیام‌ها</span>
+                    <Crown className="w-3.5 h-3.5 text-amber-400" />
+                  </h4>
+                  <p className="text-[10px] text-slate-400 truncate max-w-[200px]">{chatTitle}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAutoDeleteModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-[11px] text-slate-300 leading-relaxed">
+              پیام‌های ارسالی پس از سپری شدن این مدت، به صورت خودکار و دائمی از این گروه حذف می‌شوند:
+            </p>
+
+            {/* Durations options */}
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {[
+                { hours: 0, label: 'خاموش (پیام‌ها حذف نشوند)', desc: 'پیام‌ها در سابقه گروه حفظ می‌گردند' },
+                { hours: 1, label: '۱ ساعت', desc: 'حذف خودکار ۱ ساعت پس از ارسال' },
+                { hours: 6, label: '۶ ساعت', desc: 'مناسب مکالمات موقت روزانه' },
+                { hours: 12, label: '۱۲ ساعت', desc: 'حذف خودکار پس از ۱۲ ساعت' },
+                { hours: 24, label: '۲۴ ساعت (۱ روز)', desc: 'پاکسازی پیام‌های روز قبل' },
+                { hours: 48, label: '۴۸ ساعت (۲ روز)', desc: 'حفظ پیام‌ها تا ۲ روز' },
+                { hours: 168, label: '۷ روز (یک هفته)', desc: 'پاکسازی خودکار هفتگی' },
+                { hours: 720, label: '۳۰ روز (یک ماه)', desc: 'پاکسازی خودکار ماهانه' },
+              ].map((opt) => (
+                <div
+                  key={opt.hours}
+                  onClick={() => setSelectedAutoDeleteHours(opt.hours)}
+                  className={`p-2.5 rounded-2xl border cursor-pointer transition-all flex items-center justify-between ${
+                    selectedAutoDeleteHours === opt.hours
+                      ? 'bg-amber-500/15 border-amber-500/60 text-amber-200 shadow-sm'
+                      : 'bg-slate-950/70 border-slate-800 hover:bg-slate-850 hover:border-slate-700 text-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                      selectedAutoDeleteHours === opt.hours
+                        ? 'border-amber-400 bg-amber-400'
+                        : 'border-slate-600'
+                    }`}>
+                      {selectedAutoDeleteHours === opt.hours && (
+                        <div className="w-1.5 h-1.5 rounded-full bg-slate-950" />
+                      )}
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold">{opt.label}</div>
+                      <div className="text-[10px] text-slate-400">{opt.desc}</div>
+                    </div>
+                  </div>
+                  {opt.hours > 0 && (
+                    <Clock className="w-3.5 h-3.5 text-slate-500" />
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={handleSaveAutoDelete}
+                disabled={isSavingAutoDelete}
+                className="flex-1 py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-amber-500/20 transition-all disabled:opacity-50"
+              >
+                {isSavingAutoDelete ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-950" />
+                    <span>در حال ذخیره...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-slate-950" />
+                    <span>ذخیره تنظیمات حذف خودکار</span>
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowAutoDeleteModal(false)}
+                disabled={isSavingAutoDelete}
                 className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition-colors"
               >
                 انصراف

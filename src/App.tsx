@@ -217,6 +217,32 @@ export default function App() {
       setMessages(prev => prev.filter(m => m.id !== messageId));
     });
 
+    const unsubChatCleared = realtime.on('chat:cleared', ({ chatId }: { chatId: string; deletedCount: number }) => {
+      setMessages(prev => prev.filter(m => m.chatId !== chatId));
+    });
+
+    const unsubAutoDeleteUpdated = realtime.on('group:auto-delete-updated', ({ groupId, autoDeleteHours }: { groupId: string; autoDeleteHours: number }) => {
+      setGroups(prev => prev.map(g => g.id === groupId ? { ...g, autoDeleteHours } : g));
+      setActiveChat(prev => {
+        if (prev && prev.isGroup && prev.groupData?.id === groupId) {
+          return {
+            ...prev,
+            groupData: { ...prev.groupData, autoDeleteHours },
+          };
+        }
+        return prev;
+      });
+    });
+
+    const unsubAutoPurged = realtime.on('chat:auto-purged', () => {
+      // Reload messages when auto purge triggers
+      api.getMessages('').then(allMsgs => {
+        if (allMsgs && Array.isArray(allMsgs)) {
+          setMessages(allMsgs);
+        }
+      }).catch(() => {});
+    });
+
     const unsubPin = realtime.on('message:pinned', ({ messageId, isPinned }: { messageId: string; isPinned: boolean }) => {
       setMessages(prev => prev.map(m => m.id === messageId ? { ...m, isPinned } : m));
     });
@@ -309,6 +335,9 @@ export default function App() {
     return () => {
       unsubMsg();
       unsubMsgDeleted();
+      unsubChatCleared();
+      unsubAutoDeleteUpdated();
+      unsubAutoPurged();
       unsubPin();
       unsubReaction();
       unsubGroupCreated();

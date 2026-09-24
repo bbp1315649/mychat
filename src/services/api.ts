@@ -125,6 +125,7 @@ export const api = {
     description: string;
     memberIds: string[];
     isAnnouncementOnly?: boolean;
+    autoDeleteHours?: number;
     avatar?: string;
   }): Promise<Group> {
     const data = await safeFetchJson<{ success: boolean; group: Group }>(`${API_BASE}/admin/groups`, {
@@ -214,6 +215,25 @@ export const api = {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId }),
+    });
+  },
+
+  // Clear entire chat history (Principal only)
+  // Requirement: "مدیر این امکان را داشته باشد که سابقه چت ها رو پاک کند یا مدت تنظیم کند اتومات حذف شود"
+  async clearChatHistory(chatId: string, userId: string): Promise<{ success: boolean; deletedCount: number }> {
+    return safeFetchJson<{ success: boolean; deletedCount: number }>(`${API_BASE}/chats/${chatId}/clear-history`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId }),
+    });
+  },
+
+  // Set group auto-delete duration (TTL)
+  async setGroupAutoDelete(groupId: string, autoDeleteHours: number, userId: string): Promise<{ success: boolean; autoDeleteHours: number }> {
+    return safeFetchJson<{ success: boolean; autoDeleteHours: number }>(`${API_BASE}/groups/${groupId}/auto-delete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ autoDeleteHours, userId }),
     });
   },
 

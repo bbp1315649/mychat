@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { User, Group } from '../types';
 import { api } from '../services/api';
-import { X, Users, Megaphone, CheckSquare, Square, Plus } from 'lucide-react';
+import { X, Users, Megaphone, CheckSquare, Square, Plus, Timer } from 'lucide-react';
 
 interface CreateGroupModalProps {
   users: User[];
@@ -17,6 +17,7 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [isAnnouncementOnly, setIsAnnouncementOnly] = useState(false);
+  const [autoDeleteHours, setAutoDeleteHours] = useState<number>(0);
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -31,6 +32,7 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
         description: description.trim() || 'گروه گفتگوی کادر مدرسه',
         memberIds: selectedMemberIds,
         isAnnouncementOnly,
+        autoDeleteHours,
       });
       onCreated(group);
       onClose();
@@ -104,6 +106,33 @@ export const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
               onChange={(e) => setIsAnnouncementOnly(e.target.checked)}
               className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
             />
+          </div>
+
+          {/* Auto-Delete Duration Option */}
+          <div className="p-2.5 bg-slate-950 border border-slate-800 rounded-xl space-y-1.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Timer className="w-4 h-4 text-amber-400" />
+                <div>
+                  <div className="text-[11px] font-semibold text-slate-200">مدت زمان حذف خودکار پیام‌ها</div>
+                  <div className="text-[9px] text-slate-400">پاکسازی دوره‌ای پیام‌های قدیمی این گروه</div>
+                </div>
+              </div>
+            </div>
+            <select
+              value={autoDeleteHours}
+              onChange={(e) => setAutoDeleteHours(Number(e.target.value))}
+              className="w-full bg-slate-900 border border-slate-700/80 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+            >
+              <option value={0}>غیرفعال (پیام‌ها حذف نشوند)</option>
+              <option value={1}>حذف خودکار پس از ۱ ساعت</option>
+              <option value={6}>حذف خودکار پس از ۶ ساعت</option>
+              <option value={12}>حذف خودکار پس از ۱۲ ساعت</option>
+              <option value={24}>حذف خودکار پس از ۲۴ ساعت (۱ روز)</option>
+              <option value={48}>حذف خودکار پس از ۴۸ ساعت (۲ روز)</option>
+              <option value={168}>حذف خودکار پس از ۷ روز (یک هفته)</option>
+              <option value={720}>حذف خودکار پس از ۳۰ روز (یک ماه)</option>
+            </select>
           </div>
 
           {/* Members Checklist */}
