@@ -285,10 +285,38 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
   const [isSendingVoice, setIsSendingVoice] = useState(false);
   const [micNotice, setMicNotice] = useState<string | null>(null);
   const [speechTranscript, setSpeechTranscript] = useState<string>('');
+  const [translatedSpeechEnglish, setTranslatedSpeechEnglish] = useState<string>('');
+  const [isTranslatingVoice, setIsTranslatingVoice] = useState<boolean>(false);
+  const [voiceTypingTargetLang, setVoiceTypingTargetLang] = useState<'fa' | 'en'>('fa');
   const speechControllerRef = useRef<SpeechRecognitionController | null>(null);
   const voiceTypingInitialTextRef = useRef<string>('');
   const [isVoiceTyping, setIsVoiceTyping] = useState<boolean>(false);
   const [showVoiceTemplates, setShowVoiceTemplates] = useState<boolean>(false);
+
+  // Auto-translate spoken Persian voice to English in real time
+  // Requirement: "مثلا فارسی صحبت بکنیم انگلیسی ترجمه و ارسال بشه"
+  useEffect(() => {
+    if (!speechTranscript.trim()) {
+      setTranslatedSpeechEnglish('');
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsTranslatingVoice(true);
+      try {
+        const res = await api.translate(speechTranscript.trim(), 'en', 'fa');
+        if (res && res.translatedText) {
+          setTranslatedSpeechEnglish(res.translatedText);
+        }
+      } catch (err) {
+        console.warn('Realtime voice translation error:', err);
+      } finally {
+        setIsTranslatingVoice(false);
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [speechTranscript]);
 
   // Principal removes member from this group
   // Requirement: "مدیر قابلیت حذف افراد ... از گروه را داشته باشد"
@@ -455,6 +483,71 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
     }
   };
 
+  // Convert Spoken Persian Voice to English Translation and Send Directly
+  // Requirement: "مثلا فارسی صحبت بکنیم انگلیسی ترجمه و ارسال بشه"
+  const stopAndSendAsEnglish = async (mode: 'english-only' | 'bilingual' = 'english-only') => {
+    clearInterval(recordIntervalRef.current);
+    clearInterval(audioLevelIntervalRef.current);
+    setIsRecording(false);
+    setRecordTimer(0);
+    setAudioLevel(0);
+    setIsSendingVoice(true);
+
+    if (activeRecorderRef.current) {
+      try {
+        await activeRecorderRef.current.stop();
+      } catch (e) {
+        // ignore
+      }
+      activeRecorderRef.current = null;
+    }
+    if (speechControllerRef.current) {
+      speechControllerRef.current.stop();
+      speechControllerRef.current = null;
+    }
+
+    const rawPersian = speechTranscript.trim() || 'سلام و خسته نباشید همکار گرامی';
+    let englishText = translatedSpeechEnglish.trim();
+
+    // If English translation hasn't finished yet, translate now on the fly
+    if (!englishText) {
+      try {
+        const res = await api.translate(rawPersian, 'en', 'fa');
+        if (res && res.translatedText) {
+          englishText = res.translatedText;
+        }
+      } catch (err) {
+        console.warn('Failed to translate speech on send:', err);
+      }
+    }
+
+    const effectiveEnglish = englishText || rawPersian;
+    const finalContent = mode === 'bilingual'
+      ? `${effectiveEnglish}\n──────────────\nمتن گفتار فارسی: ${rawPersian}`
+      : effectiveEnglish;
+
+    try {
+      const msg = await api.sendMessage({
+        chatId,
+        senderId: currentUser.id,
+        content: finalContent,
+        type: 'text',
+        isVoiceTranscribed: true,
+        isVoiceTranslated: true,
+        originalSpokenText: rawPersian,
+      });
+      onSendMessage(msg);
+      setSpeechTranscript('');
+      setTranslatedSpeechEnglish('');
+      setShowVoiceTemplates(false);
+    } catch (err: any) {
+      console.error('Failed to send translated voice text:', err);
+      alert(err.message || 'خطا در ارسال ترجمه انگلیسی پیام صوتی');
+    } finally {
+      setIsSendingVoice(false);
+    }
+  };
+
   // Send Audio Recording along with written transcript
   const stopAndSendRecording = async () => {
     clearInterval(recordIntervalRef.current);
@@ -525,13 +618,15 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
   };
 
   // Transfer transcribed speech into input box for editing/translation
-  const transferSpeechToInput = () => {
-    const textToInsert = speechTranscript.trim() || 'سلام و خسته نباشید همکاران گرامی';
+  const transferSpeechToInput = (lang: 'fa' | 'en' = 'fa') => {
+    const textToInsert = lang === 'en'
+      ? (translatedSpeechEnglish.trim() || 'Hello, dear colleagues.')
+      : (speechTranscript.trim() || 'سلام و خسته نباشید همکاران گرامی');
     setInputText(prev => prev ? `${prev} ${textToInsert}` : textToInsert);
     cancelRecording();
   };
 
-  // Direct Voice Typing into input box
+  // Direct Voice Typing into input box (Persian or Live English Translation)
   const toggleVoiceTyping = () => {
     if (isVoiceTyping) {
       if (speechControllerRef.current) {
@@ -545,9 +640,19 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
       voiceTypingInitialTextRef.current = inputText.trim();
       const controller = startSpeechToText({
         lang: 'fa-IR',
-        onResult: (transcript) => {
+        onResult: async (transcript) => {
           const initial = voiceTypingInitialTextRef.current;
-          setInputText(initial ? `${initial} ${transcript}` : transcript);
+          if (voiceTypingTargetLang === 'en') {
+            try {
+              const res = await api.translate(transcript, 'en', 'fa');
+              const enText = res.translatedText || transcript;
+              setInputText(initial ? `${initial} ${enText}` : enText);
+            } catch {
+              setInputText(initial ? `${initial} ${transcript}` : transcript);
+            }
+          } else {
+            setInputText(initial ? `${initial} ${transcript}` : transcript);
+          }
         },
         onError: (err) => {
           console.warn('Voice typing error:', err);
@@ -888,18 +993,34 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                   {/* Text content / Caption / Large Sticker */}
                   {msg.type !== 'voice' && msg.content && (
                     <>
-                      {msg.isVoiceTranscribed && (
+                      {msg.isVoiceTranslated ? (
+                        <div className="flex flex-col gap-1 mb-1.5">
+                          <div className="flex items-center gap-1.5 text-[10px] text-cyan-300 font-bold opacity-95">
+                            <Languages className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                            <span>ترجمه اختصاصی از گفتار فارسی به انگلیسی</span>
+                          </div>
+                          {msg.originalSpokenText && (
+                            <div className="text-[10px] text-slate-300 bg-black/25 px-2 py-1 rounded-lg border border-white/10" dir="rtl">
+                              <span className="text-slate-400 font-normal">گفتار اولیه فارسی: </span>
+                              <span className="font-medium text-slate-200">«{msg.originalSpokenText}»</span>
+                            </div>
+                          )}
+                        </div>
+                      ) : msg.isVoiceTranscribed ? (
                         <div className="flex items-center gap-1 text-[10px] text-emerald-300 font-semibold mb-1 opacity-90">
                           <Sparkles className="w-3 h-3 text-emerald-400" />
                           <span>ارسال شده با تبدیل گفتار به متن</span>
                         </div>
-                      )}
+                      ) : null}
                       {isSticker ? (
                         <div className="text-5xl sm:text-6xl py-2 px-1 text-center select-text hover:scale-110 active:scale-95 transition-transform cursor-pointer leading-none">
                           {msg.content}
                         </div>
                       ) : (
-                        <p className={`text-xs leading-relaxed whitespace-pre-wrap select-text ${isMedia ? 'px-1.5 pt-1.5 pb-0.5' : ''}`}>
+                        <p
+                          dir={msg.isVoiceTranslated ? 'ltr' : 'auto'}
+                          className={`text-xs leading-relaxed whitespace-pre-wrap select-text ${isMedia ? 'px-1.5 pt-1.5 pb-0.5' : ''} ${msg.isVoiceTranslated ? 'font-sans tracking-wide text-slate-100' : ''}`}
+                        >
                           {msg.content}
                         </p>
                       )}
@@ -1267,75 +1388,124 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
             </div>
           )}
 
-          {/* Live Recognized Speech Transcript Box */}
-          <div className="p-2.5 rounded-xl bg-slate-950/90 border border-indigo-500/30 text-xs">
-            <div className="flex items-center justify-between text-[10px] text-indigo-300 mb-1">
-              <span className="flex items-center gap-1 font-bold">
-                <Sparkles className="w-3 h-3 text-indigo-400" />
-                <span>متن گفتار شما (تبدیل‌شده از صدا):</span>
-              </span>
-              {speechTranscript && (
-                <button
-                  type="button"
-                  onClick={transferSpeechToInput}
-                  className="text-slate-400 hover:text-indigo-300 flex items-center gap-0.5 text-[10px]"
-                  title="انتقال به کادر متن برای ویرایش یا ترجمه"
-                >
-                  <RotateCcw className="w-2.5 h-2.5" />
-                  <span>انتقال به کادر متن</span>
-                </button>
-              )}
-            </div>
-            <p className="text-slate-100 min-h-[22px] leading-relaxed font-medium">
-              {speechTranscript ? (
-                `«${speechTranscript}»`
-              ) : (
-                <span className="text-slate-500 italic text-[11px]">
-                  در حال صحبت کردن باشید تا گفتار شما هم‌زمان به متن تبدیل شود...
+          {/* Dual-Card Live Speech & English Translation Preview */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+            {/* Card 1: Spoken Persian Box */}
+            <div className="p-2.5 rounded-xl bg-slate-950/90 border border-slate-800 flex flex-col justify-between">
+              <div className="flex items-center justify-between text-[10px] text-slate-300 mb-1">
+                <span className="flex items-center gap-1 font-bold text-amber-300">
+                  <Sparkles className="w-3 h-3 text-amber-400" />
+                  <span>متن گفتار شما (فارسی):</span>
                 </span>
-              )}
-            </p>
+                {speechTranscript && (
+                  <button
+                    type="button"
+                    onClick={() => transferSpeechToInput('fa')}
+                    className="text-slate-400 hover:text-indigo-300 flex items-center gap-0.5 text-[10px]"
+                    title="انتقال متن فارسی به کادر پیام"
+                  >
+                    <RotateCcw className="w-2.5 h-2.5" />
+                    <span>انتقال متن</span>
+                  </button>
+                )}
+              </div>
+              <p className="text-slate-100 min-h-[22px] leading-relaxed font-medium">
+                {speechTranscript ? (
+                  `«${speechTranscript}»`
+                ) : (
+                  <span className="text-slate-500 italic text-[11px]">
+                    فارسی صحبت کنید تا متن و ترجمه انگلیسی آن آماده شود...
+                  </span>
+                )}
+              </p>
+            </div>
+
+            {/* Card 2: Live English Translation Box */}
+            <div className="p-2.5 rounded-xl bg-slate-950/90 border border-indigo-500/40 flex flex-col justify-between" dir="ltr">
+              <div className="flex items-center justify-between text-[10px] text-indigo-300 mb-1">
+                <span className="flex items-center gap-1 font-bold text-indigo-300">
+                  <Languages className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>English Translation (ترجمه):</span>
+                </span>
+                {translatedSpeechEnglish && (
+                  <button
+                    type="button"
+                    onClick={() => transferSpeechToInput('en')}
+                    className="text-indigo-300 hover:text-white flex items-center gap-0.5 text-[10px]"
+                    title="انتقال ترجمه انگلیسی به کادر پیام"
+                  >
+                    <span>Insert EN</span>
+                  </button>
+                )}
+              </div>
+              <p className="text-indigo-100 min-h-[22px] leading-relaxed font-sans text-[11px]">
+                {translatedSpeechEnglish ? (
+                  `"${translatedSpeechEnglish}"`
+                ) : isTranslatingVoice ? (
+                  <span className="text-indigo-400/80 italic flex items-center gap-1">
+                    <Loader2 className="w-3 h-3 animate-spin inline" />
+                    Translating to English...
+                  </span>
+                ) : (
+                  <span className="text-slate-600 italic">
+                    {speechTranscript ? 'Generating English...' : 'English translation appears here live...'}
+                  </span>
+                )}
+              </p>
+            </div>
           </div>
 
-          {/* Action buttons: Send as Written Text OR Send Audio+Transcript */}
-          <div className="flex items-center justify-end gap-2 pt-1 flex-wrap">
-            {speechTranscript && (
-              <button
-                type="button"
-                onClick={transferSpeechToInput}
-                className="py-1.5 px-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-[11px] font-semibold flex items-center gap-1 transition-all"
-                title="ویرایش در کادر پیام یا ترجمه به انگلیسی"
-              >
-                <span>ویرایش / ترجمه</span>
-              </button>
-            )}
-
-            {/* Main Action 1: Send converted voice directly as text */}
+          {/* Action buttons: Translate to English & Send / Bilingual / Persian Text / Voice */}
+          <div className="flex items-center justify-end gap-1.5 pt-1 flex-wrap">
+            {/* Main Highlight Action: Speak Persian -> Translate to English and Send */}
             <button
               type="button"
-              onClick={() => stopAndSendAsText()}
+              onClick={() => stopAndSendAsEnglish('english-only')}
               disabled={isSendingVoice}
-              className="py-1.5 px-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-md shadow-blue-600/30 text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
-              title="پیام صوتی به متن نوشتاری تبدیل و ارسال می‌شود"
+              className="py-1.5 px-3 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white rounded-xl shadow-md shadow-indigo-600/30 text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
+              title="ترجمه خودکار گفتار شما به انگلیسی و ارسال مستقیم"
             >
               {isSendingVoice ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
-                <FileText className="w-3.5 h-3.5" />
+                <Languages className="w-3.5 h-3.5 text-cyan-300" />
               )}
-              <span>ارسال به صورت متن نوشتاری</span>
+              <span>ترجمه به انگلیسی و ارسال</span>
             </button>
 
-            {/* Main Action 2: Send Audio + Transcript */}
+            {/* Bilingual Action: English + Original Persian */}
+            <button
+              type="button"
+              onClick={() => stopAndSendAsEnglish('bilingual')}
+              disabled={isSendingVoice}
+              className="py-1.5 px-2.5 bg-slate-800 hover:bg-slate-700 text-indigo-200 rounded-xl border border-indigo-500/40 text-xs font-semibold flex items-center gap-1 transition-all active:scale-95 disabled:opacity-50"
+              title="ارسال هر دو متن انگلیسی و گفتار اولیه فارسی با هم"
+            >
+              <span>ارسال دوزبانه (FA+EN)</span>
+            </button>
+
+            {/* Action 3: Send converted voice as Persian text */}
+            <button
+              type="button"
+              onClick={() => stopAndSendAsText()}
+              disabled={isSendingVoice}
+              className="py-1.5 px-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-1 transition-all active:scale-95 disabled:opacity-50"
+              title="ارسال به صورت متن فارسی"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>ارسال متن فارسی</span>
+            </button>
+
+            {/* Action 4: Send Audio + Transcript */}
             <button
               type="button"
               onClick={stopAndSendRecording}
               disabled={isSendingVoice}
-              className="py-1.5 px-3 bg-rose-600 hover:bg-rose-500 text-white rounded-xl shadow-md shadow-rose-600/30 text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
+              className="py-1.5 px-2.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl shadow-md shadow-rose-600/30 text-xs font-bold flex items-center gap-1 transition-all active:scale-95 disabled:opacity-50"
               title="ارسال فایل صوتی همراه با متن پیاده‌سازی‌شده"
             >
               <Send className="w-3.5 h-3.5" />
-              <span>ارسال صوت + متن</span>
+              <span>ارسال صوت</span>
             </button>
           </div>
         </div>
@@ -1571,18 +1741,52 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
 
             {/* Voice Typing Active Indicator Banner */}
             {isVoiceTyping && (
-              <div className="px-3 py-2 bg-indigo-950/95 border-b border-indigo-500/40 flex items-center justify-between text-xs text-indigo-200 backdrop-blur-md animate-in slide-in-from-bottom-2 mb-1.5 rounded-xl">
+              <div className="px-3 py-2 bg-indigo-950/95 border-b border-indigo-500/40 flex items-center justify-between text-xs text-indigo-200 backdrop-blur-md animate-in slide-in-from-bottom-2 mb-1.5 rounded-xl gap-2 flex-wrap">
                 <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-indigo-400 animate-ping" />
-                  <span className="text-[11px] font-medium">در حال شنیدن صدای شما و تبدیل مستقیم به متن فارسی...</span>
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping" />
+                  <span className="text-[11px] font-medium">
+                    {voiceTypingTargetLang === 'en'
+                      ? '🎙️ فارسی صحبت کنید، ترجمه انگلیسی همزمان در کادر درج می‌شود...'
+                      : '🎙️ در حال شنیدن گفتار شما و تایپ به زبان فارسی...'}
+                  </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={toggleVoiceTyping}
-                  className="px-2.5 py-0.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold transition-colors"
-                >
-                  اتمام گفتار
-                </button>
+
+                <div className="flex items-center gap-1.5">
+                  <div className="flex items-center bg-slate-900 border border-indigo-400/30 rounded-lg p-0.5 text-[10px]">
+                    <button
+                      type="button"
+                      onClick={() => setVoiceTypingTargetLang('fa')}
+                      className={`px-2 py-0.5 rounded-md transition-colors ${
+                        voiceTypingTargetLang === 'fa'
+                          ? 'bg-indigo-600 text-white font-bold'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      فارسی
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVoiceTypingTargetLang('en')}
+                      className={`px-2 py-0.5 rounded-md transition-colors flex items-center gap-1 ${
+                        voiceTypingTargetLang === 'en'
+                          ? 'bg-blue-600 text-white font-bold'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                      title="ترجمه همزمان گفتار فارسی به انگلیسی"
+                    >
+                      <Languages className="w-3 h-3 text-cyan-300" />
+                      <span>ترجمه انگلیسی</span>
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={toggleVoiceTyping}
+                    className="px-2.5 py-0.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold transition-colors"
+                  >
+                    اتمام
+                  </button>
+                </div>
               </div>
             )}
 
@@ -1671,14 +1875,19 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
               <button
                 type="button"
                 onClick={toggleVoiceTyping}
-                className={`p-2 rounded-xl border transition-all ${
+                className={`p-2 rounded-xl border transition-all relative ${
                   isVoiceTyping
                     ? 'bg-rose-600 text-white border-rose-500 animate-pulse shadow-md shadow-rose-500/30'
                     : 'bg-slate-950 hover:bg-slate-850 text-slate-400 hover:text-indigo-400 border-slate-800'
                 }`}
-                title={isVoiceTyping ? 'توقف تبدیل صوت به متن' : 'تایپ صوتی زنده (تبدیل گفتار به متن فارسی)'}
+                title={isVoiceTyping ? 'توقف تبدیل صوت به متن' : (voiceTypingTargetLang === 'en' ? 'تایپ صوتی و ترجمه همزمان به انگلیسی' : 'تایپ صوتی زنده (تبدیل گفتار به متن)')}
               >
                 <Mic className={`w-4 h-4 ${isVoiceTyping ? 'animate-bounce text-white' : ''}`} />
+                {voiceTypingTargetLang === 'en' && (
+                  <span className="absolute -top-1 -right-1 text-[8px] bg-blue-500 text-white font-mono px-1 rounded-full border border-slate-900 font-bold scale-90">
+                    EN
+                  </span>
+                )}
               </button>
 
               {/* Record Voice Note (with transcription and audio) */}

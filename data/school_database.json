@@ -311,6 +311,21 @@
       "fileName": "physics_experiment.jpg",
       "isPinned": false,
       "createdAt": "2026-09-21T15:08:54.456Z"
+    },
+    {
+      "id": "m_1790247788388_9wp",
+      "chatId": "group_general",
+      "senderId": "u_principal",
+      "senderName": "دکتر محمد رضایی (مدیر مدرسه)",
+      "senderRole": "principal",
+      "senderAvatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+      "content": "Tomorrow at 10 AM we will hold the teachers council meeting.",
+      "type": "text",
+      "isVoiceTranscribed": true,
+      "isVoiceTranslated": true,
+      "originalSpokenText": "فردا ساعت ده صبح جلسه شورای دبیران را برگزار می‌کنیم.",
+      "isPinned": false,
+      "createdAt": "2026-09-24T11:03:08.388Z"
     }
   ],
   "reactions": []

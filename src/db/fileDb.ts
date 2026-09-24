@@ -43,6 +43,8 @@ export interface DbSchema {
     videoDuration?: number;
     voiceTranscript?: string;
     isVoiceTranscribed?: boolean;
+    isVoiceTranslated?: boolean;
+    originalSpokenText?: string;
     isPinned: boolean;
     replyToId?: string;
     replyToContent?: string;
@@ -614,6 +616,8 @@ class FileDatabaseEngine {
         voiceDuration: m.voiceDuration,
         voiceTranscript: m.voiceTranscript,
         isVoiceTranscribed: m.isVoiceTranscribed,
+        isVoiceTranslated: m.isVoiceTranslated,
+        originalSpokenText: m.originalSpokenText,
         videoDuration: m.videoDuration,
         isPinned: m.isPinned || false,
         reactions,
@@ -641,6 +645,8 @@ class FileDatabaseEngine {
     videoDuration?: number;
     voiceTranscript?: string;
     isVoiceTranscribed?: boolean;
+    isVoiceTranslated?: boolean;
+    originalSpokenText?: string;
     replyTo?: { id: string; content: string; senderName: string };
   }): Message {
     const newId = 'm_' + Date.now() + '_' + Math.random().toString(36).substring(2, 5);
@@ -660,6 +666,8 @@ class FileDatabaseEngine {
       voiceDuration: msg.voiceDuration,
       voiceTranscript: msg.voiceTranscript,
       isVoiceTranscribed: msg.isVoiceTranscribed,
+      isVoiceTranslated: msg.isVoiceTranslated,
+      originalSpokenText: msg.originalSpokenText,
       videoDuration: msg.videoDuration,
       isPinned: false,
       replyToId: msg.replyTo?.id,
@@ -689,6 +697,8 @@ class FileDatabaseEngine {
       voiceDuration: newMsg.voiceDuration,
       voiceTranscript: newMsg.voiceTranscript,
       isVoiceTranscribed: newMsg.isVoiceTranscribed,
+      isVoiceTranslated: newMsg.isVoiceTranslated,
+      originalSpokenText: newMsg.originalSpokenText,
       videoDuration: newMsg.videoDuration,
       isPinned: false,
       reactions: {},

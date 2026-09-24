@@ -46,6 +46,8 @@ export interface Message {
   voiceDuration?: number; // in seconds
   voiceTranscript?: string; // written transcript of voice message
   isVoiceTranscribed?: boolean; // converted from speech to written text
+  isVoiceTranslated?: boolean; // translated from voice to English
+  originalSpokenText?: string; // original Persian spoken text
   videoDuration?: number; // in seconds
   isPinned?: boolean;
   replyTo?: {

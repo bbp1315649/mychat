@@ -423,7 +423,7 @@ app.get('/api/messages/:chatId', async (req, res) => {
 // 9. Send message
 app.post('/api/messages', async (req, res) => {
   try {
-    const { chatId, senderId, content, type = 'text', fileUrl, fileName, voiceDuration, videoDuration, replyTo, voiceTranscript, isVoiceTranscribed } = req.body;
+    const { chatId, senderId, content, type = 'text', fileUrl, fileName, voiceDuration, videoDuration, replyTo, voiceTranscript, isVoiceTranscribed, isVoiceTranslated, originalSpokenText } = req.body;
 
     const allUsers = await DatabaseRepository.getAllUsers();
     const sender = allUsers.find(u => u.id === senderId);
@@ -452,6 +452,8 @@ app.post('/api/messages', async (req, res) => {
       videoDuration,
       voiceTranscript,
       isVoiceTranscribed,
+      isVoiceTranslated,
+      originalSpokenText,
       replyTo,
     });
 
