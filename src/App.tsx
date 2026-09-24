@@ -10,7 +10,7 @@ import { StaffDirectory } from './components/StaffDirectory';
 import { UserProfile } from './components/UserProfile';
 import { BottomNav, TabType } from './components/BottomNav';
 import { CreateGroupModal } from './components/CreateGroupModal';
-import { Crown, LogOut, Lock, School, Loader2 } from 'lucide-react';
+import { Crown, LogOut, Lock, School, Loader2, RotateCcw } from 'lucide-react';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -32,8 +32,106 @@ export default function App() {
   const [logoutNotice, setLogoutNotice] = useState<string | null>(null);
   const logoutTimeoutRef = useRef<any>(null);
 
+  // Phone hardware/browser back button handling (Double-tap to exit)
+  // "منظورم دکمه خروج برنامه نبود . دکمه خروج گوشی بود"
+  // "برای خروج تا دوبار پشت سرهم دکمه خروج زده نشه از صفحه برنامه خارج نشود"
+  const [isAppExited, setIsAppExited] = useState<boolean>(false);
+  const [backExitPrompt, setBackExitPrompt] = useState<boolean>(false);
+  const lastBackPressTimeRef = useRef<number>(0);
+  const backExitTimerRef = useRef<any>(null);
+
+  const appNavStateRef = useRef({
+    activeChat,
+    currentTab,
+    showCreateGroupModal,
+    currentUser,
+  });
+
   useEffect(() => {
+    appNavStateRef.current = {
+      activeChat,
+      currentTab,
+      showCreateGroupModal,
+      currentUser,
+    };
+  }, [activeChat, currentTab, showCreateGroupModal, currentUser]);
+
+  const handlePhoneBack = () => {
+    const { activeChat, currentTab, showCreateGroupModal, currentUser } = appNavStateRef.current;
+
+    // If modal is open, close modal and stay in app
+    if (showCreateGroupModal) {
+      setShowCreateGroupModal(false);
+      window.history.pushState({ app: 'school_messenger', step: 'root' }, '');
+      return;
+    }
+
+    // If inside chat room, go back to chats list
+    if (activeChat) {
+      setActiveChat(null);
+      window.history.pushState({ app: 'school_messenger', step: 'root' }, '');
+      return;
+    }
+
+    // If on a different tab, go back to main chats tab
+    if (currentTab !== 'chats') {
+      setCurrentTab('chats');
+      window.history.pushState({ app: 'school_messenger', step: 'root' }, '');
+      return;
+    }
+
+    // User is on root screen (Chats list)!
+    const now = Date.now();
+    const diff = now - lastBackPressTimeRef.current;
+
+    if (diff < 2500) {
+      // Second press in a row within 2.5s: allow exit!
+      if (backExitTimerRef.current) clearTimeout(backExitTimerRef.current);
+      setBackExitPrompt(false);
+      lastBackPressTimeRef.current = 0;
+
+      try {
+        window.close();
+      } catch (e) {
+        // ignore
+      }
+      setIsAppExited(true);
+    } else {
+      // First press: DO NOT EXIT! Re-push state and show prompt
+      window.history.pushState({ app: 'school_messenger', step: 'root' }, '');
+      lastBackPressTimeRef.current = now;
+      setBackExitPrompt(true);
+
+      if (backExitTimerRef.current) clearTimeout(backExitTimerRef.current);
+      backExitTimerRef.current = setTimeout(() => {
+        setBackExitPrompt(false);
+        lastBackPressTimeRef.current = 0;
+      }, 2500);
+    }
+  };
+
+  useEffect(() => {
+    // Initial history state anchor
+    window.history.pushState({ app: 'school_messenger', step: 'root' }, '');
+
+    const onPopState = () => {
+      handlePhoneBack();
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' || e.key === 'BrowserBack' || e.key === 'GoBack') {
+        e.preventDefault();
+        handlePhoneBack();
+      }
+    };
+
+    window.addEventListener('popstate', onPopState);
+    window.addEventListener('keydown', onKeyDown);
+
     return () => {
+      window.removeEventListener('popstate', onPopState);
+      window.removeEventListener('keydown', onKeyDown);
+      if (backExitTimerRef.current) clearTimeout(backExitTimerRef.current);
       if (logoutTimeoutRef.current) clearTimeout(logoutTimeoutRef.current);
     };
   }, []);
@@ -358,8 +456,34 @@ export default function App() {
   // Calculate unread (demo count)
   const unreadCount = 2;
 
+  if (isAppExited) {
+    return (
+      <MobileFrame onPhoneBack={handlePhoneBack}>
+        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center select-none bg-slate-950">
+          <div className="w-16 h-16 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 flex items-center justify-center mb-4 shadow-lg">
+            <LogOut className="w-8 h-8" />
+          </div>
+          <h2 className="text-base font-bold text-slate-100 mb-1.5">از برنامه خارج شدید</h2>
+          <p className="text-xs text-slate-400 max-w-xs mb-6 leading-relaxed">
+            شما با دوبار فشردن دکمه بازگشت گوشی از محیط برنامه خارج شدید. برای بازگشت مجدد به برنامه، روی دکمه زیر کلیک کنید.
+          </p>
+          <button
+            onClick={() => {
+              setIsAppExited(false);
+              window.history.pushState({ app: 'school_messenger', step: 'root' }, '');
+            }}
+            className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg transition-all active:scale-95 flex items-center gap-2"
+          >
+            <RotateCcw className="w-4 h-4" />
+            <span>ورود دوباره به برنامه</span>
+          </button>
+        </div>
+      </MobileFrame>
+    );
+  }
+
   return (
-    <MobileFrame>
+    <MobileFrame onPhoneBack={handlePhoneBack}>
       {loadingInitial ? (
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-slate-300">
           <div className="w-14 h-14 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 mb-3 animate-pulse">
@@ -380,6 +504,14 @@ export default function App() {
             <div className="fixed top-12 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-rose-950/95 border border-rose-500/80 text-rose-200 text-xs font-bold rounded-2xl shadow-2xl flex items-center gap-2 backdrop-blur-md animate-in fade-in slide-in-from-top-3 duration-200 pointer-events-none">
               <div className="w-2 h-2 rounded-full bg-rose-400 animate-ping shrink-0" />
               <span>{logoutNotice}</span>
+            </div>
+          )}
+
+          {/* Double-tap Hardware Back Button Exit Toast (Android Toast Style) */}
+          {backExitPrompt && (
+            <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 bg-slate-900/95 border border-slate-700/90 text-white text-xs font-semibold rounded-full shadow-2xl flex items-center gap-2.5 backdrop-blur-md animate-in fade-in zoom-in-95 slide-in-from-bottom-2 duration-150 pointer-events-none ring-1 ring-white/10">
+              <div className="w-2 h-2 rounded-full bg-amber-400 animate-ping shrink-0" />
+              <span>برای خروج از برنامه، یک بار دیگر دکمه بازگشت را بزنید</span>
             </div>
           )}
 

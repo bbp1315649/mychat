@@ -3,9 +3,10 @@ import { Smartphone, Monitor, Wifi, Battery, Signal } from 'lucide-react';
 
 interface MobileFrameProps {
   children: React.ReactNode;
+  onPhoneBack?: () => void;
 }
 
-export const MobileFrame: React.FC<MobileFrameProps> = ({ children }) => {
+export const MobileFrame: React.FC<MobileFrameProps> = ({ children, onPhoneBack }) => {
   const [isMobileDevice, setIsMobileDevice] = useState(false);
   const [forceMobileFrame, setForceMobileFrame] = useState(true);
   const [currentTime, setCurrentTime] = useState('۱۲:۳۰');
@@ -104,9 +105,25 @@ export const MobileFrame: React.FC<MobileFrameProps> = ({ children }) => {
             {children}
           </div>
 
-          {/* Home indicator bar */}
-          <div className="h-4 w-full flex items-center justify-center shrink-0 bg-slate-950 pb-1">
-            <div className="w-32 h-1 bg-slate-600/60 rounded-full"></div>
+          {/* Android Navigation Bar with interactive Phone Back button */}
+          <div className="h-7 w-full flex items-center justify-around shrink-0 bg-slate-950/90 border-t border-slate-900 px-10 text-slate-500 select-none">
+            {/* Phone Back Button */}
+            <button
+              type="button"
+              onClick={onPhoneBack || (() => window.history.back())}
+              className="p-1 text-slate-400 hover:text-slate-200 active:scale-90 transition-all rounded"
+              title="دکمه بازگشت گوشی (Back)"
+            >
+              <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
+              </svg>
+            </button>
+
+            {/* Home Pill */}
+            <div className="w-16 h-1 bg-slate-600/60 rounded-full" />
+
+            {/* Recent Apps */}
+            <div className="w-3 h-3 border-2 border-slate-600/60 rounded-[2px]" />
           </div>
         </div>
       </div>

@@ -44,6 +44,11 @@ import {
   generateSyntheticVoiceWav, 
   formatAudioTime 
 } from '../utils/audioUtils';
+import { 
+  startSpeechToText, 
+  SpeechRecognitionController, 
+  SCHOOL_VOICE_TEMPLATES 
+} from '../utils/speechToText';
 
 interface ChatRoomProps {
   chatId: string;
@@ -279,6 +284,10 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
   const [audioLevel, setAudioLevel] = useState<number>(0);
   const [isSendingVoice, setIsSendingVoice] = useState(false);
   const [micNotice, setMicNotice] = useState<string | null>(null);
+  const [speechTranscript, setSpeechTranscript] = useState<string>('');
+  const speechControllerRef = useRef<SpeechRecognitionController | null>(null);
+  const [isVoiceTyping, setIsVoiceTyping] = useState<boolean>(false);
+  const [showVoiceTemplates, setShowVoiceTemplates] = useState<boolean>(false);
 
   // Principal removes member from this group
   // Requirement: "مدیر قابلیت حذف افراد ... از گروه را داشته باشد"
@@ -353,9 +362,27 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
     }
   };
 
-  // Real Microphone Audio Recording
+  // Real Microphone Audio Recording with Live Speech-to-Text
   const startRecording = async () => {
     setMicNotice(null);
+    setSpeechTranscript('');
+    setShowVoiceTemplates(false);
+
+    // Initialize native Speech-to-Text in parallel
+    try {
+      speechControllerRef.current = startSpeechToText({
+        lang: 'fa-IR',
+        onResult: (transcript) => {
+          setSpeechTranscript(transcript);
+        },
+        onError: (err) => {
+          console.warn('SpeechRecognition error:', err);
+        }
+      });
+    } catch (e) {
+      console.warn('SpeechToText init notice:', e);
+    }
+
     try {
       const recorder = await startAudioRecording();
       activeRecorderRef.current = recorder;
@@ -383,6 +410,51 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
     }
   };
 
+  // Convert Voice to Written Text and Send Directly
+  // Requirement: "پیام صوتی بفرستیم به متن نوشتاری تبدیل و ارسال بشه"
+  const stopAndSendAsText = async (customText?: string) => {
+    clearInterval(recordIntervalRef.current);
+    clearInterval(audioLevelIntervalRef.current);
+    setIsRecording(false);
+    setRecordTimer(0);
+    setAudioLevel(0);
+    setIsSendingVoice(true);
+
+    if (activeRecorderRef.current) {
+      try {
+        await activeRecorderRef.current.stop();
+      } catch (e) {
+        // ignore
+      }
+      activeRecorderRef.current = null;
+    }
+    if (speechControllerRef.current) {
+      speechControllerRef.current.stop();
+      speechControllerRef.current = null;
+    }
+
+    const textToSend = (customText || speechTranscript).trim() || 'سلام و درود، پیام صوتی تبدیل‌شده به متن نوشتاری';
+
+    try {
+      const msg = await api.sendMessage({
+        chatId,
+        senderId: currentUser.id,
+        content: textToSend,
+        type: 'text',
+        isVoiceTranscribed: true,
+      });
+      onSendMessage(msg);
+      setSpeechTranscript('');
+      setShowVoiceTemplates(false);
+    } catch (err: any) {
+      console.error('Failed to send converted voice text:', err);
+      alert(err.message || 'خطا در ارسال متن صوتی');
+    } finally {
+      setIsSendingVoice(false);
+    }
+  };
+
+  // Send Audio Recording along with written transcript
   const stopAndSendRecording = async () => {
     clearInterval(recordIntervalRef.current);
     clearInterval(audioLevelIntervalRef.current);
@@ -391,6 +463,11 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
     setRecordTimer(0);
     setAudioLevel(0);
     setIsSendingVoice(true);
+
+    if (speechControllerRef.current) {
+      speechControllerRef.current.stop();
+      speechControllerRef.current = null;
+    }
 
     try {
       let audioDataUrl = '';
@@ -403,15 +480,21 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
         audioDataUrl = generateSyntheticVoiceWav(duration);
       }
 
+      const transcript = speechTranscript.trim();
+
       const msg = await api.sendMessage({
         chatId,
         senderId: currentUser.id,
-        content: `پیام صوتی (${duration} ثانیه)`,
+        content: transcript || `پیام صوتی (${duration} ثانیه)`,
         type: 'voice',
         fileUrl: audioDataUrl,
         voiceDuration: duration,
+        voiceTranscript: transcript || undefined,
+        isVoiceTranscribed: !!transcript,
       });
       onSendMessage(msg);
+      setSpeechTranscript('');
+      setShowVoiceTemplates(false);
     } catch (err: any) {
       console.error('Failed to send voice message:', err);
       alert(err.message || 'خطا در ارسال پیام صوتی');
@@ -428,10 +511,54 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
       activeRecorderRef.current.cancel();
       activeRecorderRef.current = null;
     }
+    if (speechControllerRef.current) {
+      speechControllerRef.current.cancel();
+      speechControllerRef.current = null;
+    }
     setIsRecording(false);
     setRecordTimer(0);
     setAudioLevel(0);
     setMicNotice(null);
+    setSpeechTranscript('');
+    setShowVoiceTemplates(false);
+  };
+
+  // Transfer transcribed speech into input box for editing/translation
+  const transferSpeechToInput = () => {
+    const textToInsert = speechTranscript.trim() || 'سلام و خسته نباشید همکاران گرامی';
+    setInputText(prev => prev ? `${prev} ${textToInsert}` : textToInsert);
+    cancelRecording();
+  };
+
+  // Direct Voice Typing into input box
+  const toggleVoiceTyping = () => {
+    if (isVoiceTyping) {
+      if (speechControllerRef.current) {
+        speechControllerRef.current.stop();
+        speechControllerRef.current = null;
+      }
+      setIsVoiceTyping(false);
+    } else {
+      setIsVoiceTyping(true);
+      const controller = startSpeechToText({
+        lang: 'fa-IR',
+        onResult: (transcript) => {
+          setInputText(transcript);
+        },
+        onError: (err) => {
+          console.warn('Voice typing error:', err);
+          setIsVoiceTyping(false);
+        },
+        onEnd: () => {
+          setIsVoiceTyping(false);
+        }
+      });
+      speechControllerRef.current = controller;
+      if (!controller.isSupported) {
+        setIsVoiceTyping(false);
+        alert('مرورگر شما از تایپ صوتی خودکار پشتیبانی نمی‌کند یا دسترسی به میکروفون محدود است.');
+      }
+    }
   };
 
   // Send Official Circular / Announcement
@@ -642,17 +769,32 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                     </div>
                   )}
 
-                  {/* Message Content: Real Voice Message Player */}
+                  {/* Message Content: Real Voice Message Player with Transcript */}
                   {msg.type === 'voice' && (
-                    <VoiceMessagePlayer
-                      audioUrl={msg.fileUrl}
-                      duration={msg.voiceDuration || 3}
-                      messageId={msg.id}
-                      isMe={isMe}
-                      isActive={activeAudioId === msg.id}
-                      onPlay={(id) => setActiveAudioId(id)}
-                      onPause={() => setActiveAudioId(null)}
-                    />
+                    <div className="space-y-1.5">
+                      <VoiceMessagePlayer
+                        audioUrl={msg.fileUrl}
+                        duration={msg.voiceDuration || 3}
+                        messageId={msg.id}
+                        isMe={isMe}
+                        isActive={activeAudioId === msg.id}
+                        onPlay={(id) => setActiveAudioId(id)}
+                        onPause={() => setActiveAudioId(null)}
+                      />
+                      {msg.voiceTranscript && (
+                        <div className="p-2 rounded-xl bg-black/25 border border-white/10 text-xs text-slate-100">
+                          <div className="flex items-center justify-between text-[10px] text-slate-300 mb-1">
+                            <span className="flex items-center gap-1 text-emerald-300 font-bold">
+                              <Sparkles className="w-3 h-3 text-emerald-400" />
+                              <span>متن گفتار صوتی:</span>
+                            </span>
+                          </div>
+                          <p className="whitespace-pre-wrap leading-relaxed select-text font-medium text-slate-100 text-[11px]">
+                            {msg.voiceTranscript}
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   )}
 
                   {/* Message Content: File/Document */}
@@ -738,15 +880,23 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
 
                   {/* Text content / Caption / Large Sticker */}
                   {msg.type !== 'voice' && msg.content && (
-                    isSticker ? (
-                      <div className="text-5xl sm:text-6xl py-2 px-1 text-center select-text hover:scale-110 active:scale-95 transition-transform cursor-pointer leading-none">
-                        {msg.content}
-                      </div>
-                    ) : (
-                      <p className={`text-xs leading-relaxed whitespace-pre-wrap select-text ${isMedia ? 'px-1.5 pt-1.5 pb-0.5' : ''}`}>
-                        {msg.content}
-                      </p>
-                    )
+                    <>
+                      {msg.isVoiceTranscribed && (
+                        <div className="flex items-center gap-1 text-[10px] text-emerald-300 font-semibold mb-1 opacity-90">
+                          <Sparkles className="w-3 h-3 text-emerald-400" />
+                          <span>ارسال شده با تبدیل گفتار به متن</span>
+                        </div>
+                      )}
+                      {isSticker ? (
+                        <div className="text-5xl sm:text-6xl py-2 px-1 text-center select-text hover:scale-110 active:scale-95 transition-transform cursor-pointer leading-none">
+                          {msg.content}
+                        </div>
+                      ) : (
+                        <p className={`text-xs leading-relaxed whitespace-pre-wrap select-text ${isMedia ? 'px-1.5 pt-1.5 pb-0.5' : ''}`}>
+                          {msg.content}
+                        </p>
+                      )}
+                    </>
                   )}
 
                   {/* Optional Message Translation Card */}
@@ -1026,70 +1176,159 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
         </div>
       )}
 
-      {/* Audio Recording State Bar */}
+      {/* Audio Recording State Bar with Live Speech-to-Text */}
       {isRecording && (
-        <div className="p-3 bg-rose-950/90 border-t border-rose-500/50 flex items-center justify-between text-xs text-rose-200 z-30 shadow-lg backdrop-blur-md">
-          <div className="flex items-center gap-3">
-            <div className="relative flex items-center justify-center">
-              <span className="w-3.5 h-3.5 rounded-full bg-rose-500 animate-ping absolute" />
-              <span className="w-3.5 h-3.5 rounded-full bg-rose-500" />
+        <div className="p-3 bg-slate-900/98 border-t border-indigo-500/50 flex flex-col gap-2.5 text-xs text-slate-200 z-30 shadow-2xl backdrop-blur-md">
+          {/* Top row: Recording status, timer, audio level waveform, and templates toggle */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <div className="relative flex items-center justify-center">
+                <span className="w-3.5 h-3.5 rounded-full bg-rose-500 animate-ping absolute" />
+                <span className="w-3.5 h-3.5 rounded-full bg-rose-500" />
+              </div>
+
+              <div className="flex flex-col">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-rose-300 font-mono text-sm">
+                    {formatAudioTime(recordTimer)}
+                  </span>
+                  <span className="text-[11px] text-slate-300 font-medium">
+                    {micNotice ? 'در حال ضبط صدا...' : 'در حال شنیدن و تبدیل گفتار به متن فارسی...'}
+                  </span>
+                </div>
+
+                {/* Dynamic waveform responding to microphone audio level */}
+                <div className="flex items-center gap-1 mt-1 h-3">
+                  {[12, 24, 40, 65, 85, 95, 80, 60, 45, 30, 18, 28, 50, 75, 90, 65, 35].map((baseH, idx) => {
+                    const scale = Math.max(0.25, audioLevel / 100);
+                    const h = Math.max(3, Math.min(14, Math.round((baseH * scale) / 6)));
+                    return (
+                      <div
+                        key={idx}
+                        style={{ height: `${h}px` }}
+                        className="w-[2.5px] bg-rose-400 rounded-full transition-all duration-75"
+                      />
+                    );
+                  })}
+                </div>
+              </div>
             </div>
 
-            <div className="flex flex-col">
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-rose-100 font-mono text-sm">
-                  {formatAudioTime(recordTimer)}
-                </span>
-                <span className="text-[11px] text-rose-300 font-medium">
-                  {micNotice ? 'در حال ضبط صدا...' : 'در حال ضبط صدای واقعی از میکروفون...'}
-                </span>
-              </div>
-              
-              {/* Dynamic waveform responding to microphone audio level */}
-              <div className="flex items-center gap-1 mt-1 h-3">
-                {[12, 24, 40, 65, 85, 95, 80, 60, 45, 30, 18, 28, 50, 75, 90, 65, 35].map((baseH, idx) => {
-                  const scale = Math.max(0.25, audioLevel / 100);
-                  const h = Math.max(3, Math.min(14, Math.round((baseH * scale) / 6)));
-                  return (
-                    <div
-                      key={idx}
-                      style={{ height: `${h}px` }}
-                      className="w-[3px] bg-rose-400 rounded-full transition-all duration-75"
-                    />
-                  );
-                })}
-              </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setShowVoiceTemplates(prev => !prev)}
+                className="px-2 py-1 text-[10px] rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+                title="مشاهده نمونه جملات آماده مدرسه"
+              >
+                جملات نمونه
+              </button>
+
+              <button
+                type="button"
+                onClick={cancelRecording}
+                disabled={isSendingVoice}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 transition-colors"
+                title="لغو و حذف ضبط"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* Quick School Voice Templates (if toggled) */}
+          {showVoiceTemplates && (
+            <div className="p-2.5 bg-slate-950/90 rounded-xl border border-slate-800 space-y-1.5 animate-in fade-in">
+              <div className="text-[10px] text-slate-400 font-medium">
+                برای تست سریع تبدیل صدا به متن، روی یکی از نمونه‌های زیر کلیک کنید:
+              </div>
+              <div className="flex flex-col gap-1 max-h-36 overflow-y-auto pr-1">
+                {SCHOOL_VOICE_TEMPLATES.map((tmpl, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => {
+                      setSpeechTranscript(tmpl);
+                      setShowVoiceTemplates(false);
+                    }}
+                    className="text-[11px] text-right p-1.5 bg-slate-800/80 hover:bg-indigo-600/30 text-slate-200 hover:text-indigo-200 rounded-lg border border-slate-700/60 transition-colors leading-relaxed"
+                  >
+                    «{tmpl}»
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Live Recognized Speech Transcript Box */}
+          <div className="p-2.5 rounded-xl bg-slate-950/90 border border-indigo-500/30 text-xs">
+            <div className="flex items-center justify-between text-[10px] text-indigo-300 mb-1">
+              <span className="flex items-center gap-1 font-bold">
+                <Sparkles className="w-3 h-3 text-indigo-400" />
+                <span>متن گفتار شما (تبدیل‌شده از صدا):</span>
+              </span>
+              {speechTranscript && (
+                <button
+                  type="button"
+                  onClick={transferSpeechToInput}
+                  className="text-slate-400 hover:text-indigo-300 flex items-center gap-0.5 text-[10px]"
+                  title="انتقال به کادر متن برای ویرایش یا ترجمه"
+                >
+                  <RotateCcw className="w-2.5 h-2.5" />
+                  <span>انتقال به کادر متن</span>
+                </button>
+              )}
+            </div>
+            <p className="text-slate-100 min-h-[22px] leading-relaxed font-medium">
+              {speechTranscript ? (
+                `«${speechTranscript}»`
+              ) : (
+                <span className="text-slate-500 italic text-[11px]">
+                  در حال صحبت کردن باشید تا گفتار شما هم‌زمان به متن تبدیل شود...
+                </span>
+              )}
+            </p>
+          </div>
+
+          {/* Action buttons: Send as Written Text OR Send Audio+Transcript */}
+          <div className="flex items-center justify-end gap-2 pt-1 flex-wrap">
+            {speechTranscript && (
+              <button
+                type="button"
+                onClick={transferSpeechToInput}
+                className="py-1.5 px-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-[11px] font-semibold flex items-center gap-1 transition-all"
+                title="ویرایش در کادر پیام یا ترجمه به انگلیسی"
+              >
+                <span>ویرایش / ترجمه</span>
+              </button>
+            )}
+
+            {/* Main Action 1: Send converted voice directly as text */}
             <button
               type="button"
-              onClick={cancelRecording}
+              onClick={() => stopAndSendAsText()}
               disabled={isSendingVoice}
-              className="p-2 rounded-xl text-slate-400 hover:text-rose-300 hover:bg-rose-900/30 transition-colors"
-              title="لغو و حذف ضبط"
+              className="py-1.5 px-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-md shadow-blue-600/30 text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
+              title="پیام صوتی به متن نوشتاری تبدیل و ارسال می‌شود"
             >
-              <Trash2 className="w-4 h-4" />
+              {isSendingVoice ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <FileText className="w-3.5 h-3.5" />
+              )}
+              <span>ارسال به صورت متن نوشتاری</span>
             </button>
 
+            {/* Main Action 2: Send Audio + Transcript */}
             <button
               type="button"
               onClick={stopAndSendRecording}
               disabled={isSendingVoice}
-              className="py-1.5 px-3.5 bg-rose-600 hover:bg-rose-500 text-white rounded-xl shadow-md shadow-rose-600/30 font-bold flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
+              className="py-1.5 px-3 bg-rose-600 hover:bg-rose-500 text-white rounded-xl shadow-md shadow-rose-600/30 text-xs font-bold flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
+              title="ارسال فایل صوتی همراه با متن پیاده‌سازی‌شده"
             >
-              {isSendingVoice ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>در حال ارسال...</span>
-                </>
-              ) : (
-                <>
-                  <Send className="w-3.5 h-3.5" />
-                  <span>ارسال صوت</span>
-                </>
-              )}
+              <Send className="w-3.5 h-3.5" />
+              <span>ارسال صوت + متن</span>
             </button>
           </div>
         </div>
@@ -1323,6 +1562,23 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
               </div>
             )}
 
+            {/* Voice Typing Active Indicator Banner */}
+            {isVoiceTyping && (
+              <div className="px-3 py-2 bg-indigo-950/95 border-b border-indigo-500/40 flex items-center justify-between text-xs text-indigo-200 backdrop-blur-md animate-in slide-in-from-bottom-2 mb-1.5 rounded-xl">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-indigo-400 animate-ping" />
+                  <span className="text-[11px] font-medium">در حال شنیدن صدای شما و تبدیل مستقیم به متن فارسی...</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={toggleVoiceTyping}
+                  className="px-2.5 py-0.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold transition-colors"
+                >
+                  اتمام گفتار
+                </button>
+              </div>
+            )}
+
             <form onSubmit={handleSend} className="flex items-center gap-1.5">
               {/* Attachments Toggle */}
               <button
@@ -1399,20 +1655,34 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                   type="text"
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
-                  placeholder="پیام خود را بنویسید (یا ترجمه به انگلیسی)..."
+                  placeholder="پیام خود را بنویسید یا با صوت بگویید..."
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
                 />
               </div>
 
-              {/* Mic / Record Voice */}
-              {inputText.trim().length === 0 && (
+              {/* Voice Typing / Speech-to-Text Button */}
+              <button
+                type="button"
+                onClick={toggleVoiceTyping}
+                className={`p-2 rounded-xl border transition-all ${
+                  isVoiceTyping
+                    ? 'bg-rose-600 text-white border-rose-500 animate-pulse shadow-md shadow-rose-500/30'
+                    : 'bg-slate-950 hover:bg-slate-850 text-slate-400 hover:text-indigo-400 border-slate-800'
+                }`}
+                title={isVoiceTyping ? 'توقف تبدیل صوت به متن' : 'تایپ صوتی زنده (تبدیل گفتار به متن فارسی)'}
+              >
+                <Mic className={`w-4 h-4 ${isVoiceTyping ? 'animate-bounce text-white' : ''}`} />
+              </button>
+
+              {/* Record Voice Note (with transcription and audio) */}
+              {inputText.trim().length === 0 && !isVoiceTyping && (
                 <button
                   type="button"
                   onClick={startRecording}
                   className="p-2 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-xl text-slate-400 hover:text-rose-400 transition-colors"
-                  title="ضبط پیام صوتی دبیر"
+                  title="ضبط پیام صوتی (با قابلیت تبدیل به متن نوشتاری و ارسال)"
                 >
-                  <Mic className="w-4 h-4" />
+                  <Volume2 className="w-4 h-4" />
                 </button>
               )}
 

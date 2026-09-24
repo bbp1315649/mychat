@@ -179,6 +179,8 @@ export const api = {
     fileSize?: string;
     voiceDuration?: number;
     videoDuration?: number;
+    voiceTranscript?: string;
+    isVoiceTranscribed?: boolean;
     replyTo?: { id: string; senderName: string; content: string };
   }): Promise<Message> {
     const data = await safeFetchJson<{ success: boolean; message: Message }>(`${API_BASE}/messages`, {

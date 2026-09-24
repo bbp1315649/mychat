@@ -44,6 +44,8 @@ export interface Message {
   fileName?: string;
   fileSize?: string;
   voiceDuration?: number; // in seconds
+  voiceTranscript?: string; // written transcript of voice message
+  isVoiceTranscribed?: boolean; // converted from speech to written text
   videoDuration?: number; // in seconds
   isPinned?: boolean;
   replyTo?: {

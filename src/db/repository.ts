@@ -132,6 +132,8 @@ export class DatabaseRepository {
     fileName?: string;
     voiceDuration?: number;
     videoDuration?: number;
+    voiceTranscript?: string;
+    isVoiceTranscribed?: boolean;
     replyTo?: { id: string; content: string; senderName: string };
   }): Promise<Message> {
     return fileDb.insertMessage(msg);
