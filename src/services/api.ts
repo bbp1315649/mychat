@@ -3,12 +3,23 @@ import { User, Group, Message } from '../types';
 const API_BASE = '/api';
 
 // Safe fetch wrapper that handles non-JSON / HTML / gateway responses gracefully
-async function safeFetchJson<T = any>(url: string, options?: RequestInit): Promise<T> {
+async function safeFetchJson<T = any>(url: string, options?: RequestInit, timeoutMs = 8000): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
   let res: Response;
   try {
-    res = await fetch(url, options);
+    res = await fetch(url, {
+      ...options,
+      signal: options?.signal || controller.signal,
+    });
   } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      throw new Error('زمان انتظار ارتباط با سرور به پایان رسید. لطفاً مجدداً امتحان کنید.');
+    }
     throw new Error('خطا در برقراری ارتباط با سرور. لطفاً اتصال اینترنت خود را بررسی نمایید.');
+  } finally {
+    clearTimeout(timer);
   }
 
   const contentType = res.headers.get('content-type') || '';

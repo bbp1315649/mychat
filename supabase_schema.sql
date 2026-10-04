@@ -106,6 +106,16 @@ CREATE POLICY "Public access to messages" ON messages FOR ALL USING (true) WITH 
 DROP POLICY IF EXISTS "Public access to message_reactions" ON message_reactions;
 CREATE POLICY "Public access to message_reactions" ON message_reactions FOR ALL USING (true) WITH CHECK (true);
 
+-- اعطای دسترسی‌های کامل به نقش‌های کاربری و رفرش کش پنل Supabase
+GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres, anon, authenticated, service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO postgres, anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO postgres, anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO postgres, anon, authenticated, service_role;
+
+-- نوسازی کش پستگرس برای نمایش آنی جداول در Table Editor
+NOTIFY pgrst, 'reload schema';
+
 -- ۹. درج اطلاعات و کاربران اولیه سامانه (حساب مدیر مدرسه و همکاران)
 INSERT INTO users (id, personnel_code, mobile, full_name, subject, role, avatar, password, is_online, created_at)
 VALUES 
