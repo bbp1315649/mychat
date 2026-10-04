@@ -29,6 +29,7 @@ export const groups = pgTable('groups', {
   description: text('description'),
   avatar: text('avatar').notNull(),
   isAnnouncementOnly: boolean('is_announcement_only').default(false),
+  autoDeleteHours: integer('auto_delete_hours').default(0),
   createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 });
@@ -50,10 +51,15 @@ export const messages = pgTable('messages', {
   senderRole: text('sender_role').notNull(),
   senderAvatar: text('sender_avatar').notNull(),
   content: text('content').notNull(),
-  type: text('type').notNull().default('text'), // 'text' | 'voice' | 'circular' | 'file'
+  type: text('type').notNull().default('text'), // 'text' | 'image' | 'video' | 'voice' | 'file' | 'announcement' | 'circular'
   fileUrl: text('file_url'),
   fileName: text('file_name'),
   voiceDuration: integer('voice_duration'),
+  videoDuration: integer('video_duration'),
+  voiceTranscript: text('voice_transcript'),
+  isVoiceTranscribed: boolean('is_voice_transcribed').default(false),
+  isVoiceTranslated: boolean('is_voice_translated').default(false),
+  originalSpokenText: text('original_spoken_text'),
   isPinned: boolean('is_pinned').default(false),
   replyToId: text('reply_to_id'),
   replyToContent: text('reply_to_content'),
