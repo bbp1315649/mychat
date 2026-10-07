@@ -2,6 +2,7 @@
  * Text-to-Speech (TTS) Utility for School Chat
  * Supports automatic language detection (Persian, English, Arabic, etc.),
  * multi-engine synthesis (Server-side natural audio + Web Speech API fallback),
+ * speech rate/speed customization (defaults to comfortable 0.85x),
  * and clean state management.
  */
 
@@ -11,6 +12,43 @@ export interface SpeechPlaybackState {
   text: string;
   lang: string;
   langLabel: string;
+  rate: number;
+}
+
+export interface SpeechRatePreset {
+  label: string;
+  shortLabel: string;
+  rate: number;
+  description: string;
+}
+
+export const DEFAULT_SPEECH_RATE = 0.85;
+
+export const SPEECH_RATE_PRESETS: SpeechRatePreset[] = [
+  { label: 'خیلی آرام', shortLabel: '۰.۷x', rate: 0.7, description: 'بسیار شمرده و با دقت' },
+  { label: 'آرام', shortLabel: '۰.۸x', rate: 0.8, description: 'آهسته و کاملاً واضح' },
+  { label: 'ملایم (پیش‌فرض)', shortLabel: '۰.۸۵x', rate: 0.85, description: 'سرعت ملایم و دلنشین' },
+  { label: 'عادی', shortLabel: '۱.۰x', rate: 1.0, description: 'سرعت استاندارد' },
+  { label: 'سریع', shortLabel: '۱.۲x', rate: 1.2, description: 'پخش سریع' },
+];
+
+/**
+ * Retrieve saved speech rate from localStorage (default 0.85x)
+ */
+export function getSpeechRate(): number {
+  if (typeof window === 'undefined') return DEFAULT_SPEECH_RATE;
+  try {
+    const saved = localStorage.getItem('tts_speech_rate');
+    if (saved) {
+      const parsed = parseFloat(saved);
+      if (!isNaN(parsed) && parsed >= 0.5 && parsed <= 2.0) {
+        return Math.round(parsed * 100) / 100;
+      }
+    }
+  } catch {
+    // ignore localStorage errors
+  }
+  return DEFAULT_SPEECH_RATE;
 }
 
 // Global active audio instance for HTML5 Audio playback
@@ -24,6 +62,7 @@ let currentState: SpeechPlaybackState = {
   text: '',
   lang: '',
   langLabel: '',
+  rate: getSpeechRate(),
 };
 
 function notifyState(partial: Partial<SpeechPlaybackState>) {
@@ -35,6 +74,31 @@ function notifyState(partial: Partial<SpeechPlaybackState>) {
       console.warn('TTS listener error:', e);
     }
   });
+}
+
+/**
+ * Update speech rate, store in localStorage, and dynamically update active audio
+ */
+export function setSpeechRate(rate: number): void {
+  const clamped = Math.max(0.5, Math.min(1.5, Math.round(rate * 100) / 100));
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem('tts_speech_rate', clamped.toString());
+    } catch {
+      // ignore
+    }
+  }
+
+  // Instantly apply to active audio if currently playing
+  if (currentAudio) {
+    try {
+      currentAudio.playbackRate = clamped;
+    } catch {
+      // ignore
+    }
+  }
+
+  notifyState({ rate: clamped });
 }
 
 export function subscribeSpeechState(listener: (state: SpeechPlaybackState) => void): () => void {
@@ -156,6 +220,7 @@ export async function speakMessageText(
   const detected = detectLanguage(clean);
   const targetLang = options?.forceLang || detected.lang;
   const shortLang = detected.shortLang;
+  const activeRate = getSpeechRate();
 
   notifyState({
     isPlaying: true,
@@ -163,6 +228,7 @@ export async function speakMessageText(
     text: clean,
     lang: targetLang,
     langLabel: detected.label,
+    rate: activeRate,
   });
 
   options?.onStart?.();
@@ -181,11 +247,26 @@ export async function speakMessageText(
       const audio = new Audio(audioUrl);
       currentAudio = audio;
 
+      // Apply speech speed rate to audio
+      audio.playbackRate = activeRate;
+      audio.oncanplay = () => {
+        try {
+          audio.playbackRate = getSpeechRate();
+        } catch {
+          // ignore
+        }
+      };
+
       const playPromise = new Promise<boolean>((resolve, reject) => {
         let hasStarted = false;
 
         audio.onplaying = () => {
           hasStarted = true;
+          try {
+            audio.playbackRate = getSpeechRate();
+          } catch {
+            // ignore
+          }
         };
 
         audio.onended = () => {
@@ -232,7 +313,7 @@ export async function speakMessageText(
       const utterance = new SpeechSynthesisUtterance(clean);
       currentUtterance = utterance;
       utterance.lang = targetLang;
-      utterance.rate = 0.95; // slightly relaxed natural pace
+      utterance.rate = activeRate;
       utterance.pitch = 1.0;
 
       // Select matching voice if available
@@ -281,4 +362,15 @@ export async function speakMessageText(
   notifyState({ isPlaying: false, messageId: null, text: '' });
   options?.onError?.(new Error('دستگاه از پخش صدا پشتیبانی نمی‌کند.'));
   return false;
+}
+
+/**
+ * Quick preview test of current speech rate
+ */
+export function testSpeechRateSample(rate?: number): void {
+  if (rate) {
+    setSpeechRate(rate);
+  }
+  const sample = 'این یک نمونه صوتی از سرعت گفتار تنظیم‌شده است.';
+  speakMessageText(sample, 'sample_test_tts');
 }

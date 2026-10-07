@@ -23,8 +23,11 @@ import {
   FolderOpen,
   Loader2,
   Sparkles,
-  RotateCcw
+  RotateCcw,
+  Gauge
 } from 'lucide-react';
+import { SpeechSpeedModal } from './SpeechSpeedModal';
+import { getSpeechRate } from '../utils/textToSpeech';
 
 interface UserProfileProps {
   currentUser: User;
@@ -58,6 +61,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({
 
   // Quick Avatar Change Modal state for standard view
   const [showAvatarOptionsModal, setShowAvatarOptionsModal] = useState(false);
+  const [showSpeechSpeedModal, setShowSpeechSpeedModal] = useState(false);
 
   // Status and loading states
   const [saving, setSaving] = useState(false);
@@ -619,6 +623,29 @@ export const UserProfile: React.FC<UserProfileProps> = ({
             </div>
           </div>
 
+          {/* Text-To-Speech Settings Card */}
+          <div className="p-4 bg-slate-900 border border-slate-800 rounded-3xl space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                  <Gauge className="w-4 h-4" />
+                </div>
+                <div className="text-right">
+                  <h4 className="text-xs font-bold text-slate-100">تنظیم سرعت گفتار صوتی (TTS)</h4>
+                  <p className="text-[10px] text-slate-400">تنظیم و ملایم‌سازی سرعت خواندن صوتی متن چت‌ها</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSpeechSpeedModal(true)}
+                className="px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/30 rounded-xl text-xs transition-colors flex items-center gap-1 font-mono"
+              >
+                <span>{getSpeechRate().toFixed(2)}x</span>
+                <span className="text-[10px] font-sans font-normal">(تنظیم)</span>
+              </button>
+            </div>
+          </div>
+
           {/* In-app Logout button */}
           <div className="space-y-1.5">
             <button
@@ -720,6 +747,12 @@ export const UserProfile: React.FC<UserProfileProps> = ({
           </div>
         </div>
       )}
+
+      {/* Speech Speed Setting Modal */}
+      <SpeechSpeedModal
+        isOpen={showSpeechSpeedModal}
+        onClose={() => setShowSpeechSpeedModal(false)}
+      />
     </div>
   );
 };
