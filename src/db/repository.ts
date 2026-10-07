@@ -154,6 +154,10 @@ export class DatabaseRepository {
     return fileDb.deleteMessage(messageId, requestingUserId);
   }
 
+  static async editMessage(messageId: string, newContent: string, requestingUserId: string): Promise<{ success: boolean; message?: Message; error?: string }> {
+    return fileDb.editMessage(messageId, newContent, requestingUserId);
+  }
+
   static async clearChatHistory(chatId: string, requestingUserId: string): Promise<{ success: boolean; deletedCount: number; error?: string }> {
     return fileDb.clearChatHistory(chatId, requestingUserId);
   }

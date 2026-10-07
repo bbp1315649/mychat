@@ -63,6 +63,8 @@ CREATE TABLE IF NOT EXISTS messages (
     reply_to_id TEXT,
     reply_to_content TEXT,
     reply_to_sender TEXT,
+    is_edited BOOLEAN DEFAULT false,
+    edited_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

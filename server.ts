@@ -532,6 +532,33 @@ app.delete('/api/messages/:id', async (req, res) => {
   }
 });
 
+// 11.55. Edit message (Sender can edit their own message)
+// Requirement: "پیامی که می فرستیم قابلیت ویرایش داشته باشه"
+app.patch('/api/messages/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { content, userId } = req.body;
+    if (!content || !content.trim()) {
+      return res.status(400).json({ error: 'متن پیام نمی‌تواند خالی باشد' });
+    }
+    const requestingUserId = (userId || req.headers['x-user-id']) as string;
+    if (!requestingUserId) {
+      return res.status(400).json({ error: 'شناسه کاربر الزامی است' });
+    }
+
+    const result = await DatabaseRepository.editMessage(id, content.trim(), requestingUserId);
+    if (!result.success) {
+      return res.status(403).json({ error: result.error || 'دسترسی غیرمجاز برای ویرایش پیام' });
+    }
+
+    broadcast('message:edited', { messageId: id, content: content.trim(), isEdited: true });
+    res.json({ success: true, message: result.message });
+  } catch (error: any) {
+    console.error('Edit message error:', error);
+    res.status(500).json({ error: 'خطا در ویرایش پیام' });
+  }
+});
+
 // 11.6. Clear entire chat history for a group or conversation
 // Requirement: "مدیر این امکان را داشته باشد که سابقه چت ها رو پاک کند یا مدت تنظیم کند اتومات حذف شود"
 app.post('/api/chats/:chatId/clear-history', async (req, res) => {

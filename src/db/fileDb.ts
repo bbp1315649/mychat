@@ -47,6 +47,8 @@ export interface DbSchema {
     isVoiceTranslated?: boolean;
     originalSpokenText?: string;
     isPinned: boolean;
+    isEdited?: boolean;
+    editedAt?: string;
     replyToId?: string;
     replyToContent?: string;
     replyToSender?: string;
@@ -625,6 +627,8 @@ class FileDatabaseEngine {
         originalSpokenText: m.originalSpokenText,
         videoDuration: m.videoDuration,
         isPinned: m.isPinned || false,
+        isEdited: m.isEdited || false,
+        editedAt: m.editedAt,
         reactions,
         readBy: [m.senderId],
         replyTo: m.replyToId ? {
@@ -773,6 +777,70 @@ class FileDatabaseEngine {
     this.save();
 
     return { success: true, chatId };
+  }
+
+  public editMessage(messageId: string, newContent: string, requestingUserId: string): { success: boolean; message?: Message; error?: string } {
+    const msg = this.data.messages.find(m => m.id === messageId);
+    if (!msg) {
+      return { success: false, error: 'پیام مورد نظر یافت نشد' };
+    }
+    const requestingUser = this.data.users.find(u => u.id === requestingUserId);
+    if (!requestingUser) {
+      return { success: false, error: 'کاربر ارسال‌کننده درخواست نامعتبر است' };
+    }
+
+    const isSender = msg.senderId === requestingUserId;
+    const isPrincipal = requestingUser.role === 'principal';
+
+    if (!isSender && !isPrincipal) {
+      return { success: false, error: 'فقط ارسال‌کننده پیام مجاز به ویرایش این پیام است' };
+    }
+
+    msg.content = newContent.trim();
+    msg.isEdited = true;
+    msg.editedAt = new Date().toISOString();
+    this.save();
+
+    const d = new Date(msg.createdAt);
+    const timeStr = d.toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+    const rxList = this.data.reactions.filter(r => r.messageId === msg.id);
+    const reactions: Record<string, string[]> = {};
+    for (const r of rxList) {
+      if (!reactions[r.emoji]) reactions[r.emoji] = [];
+      reactions[r.emoji].push(r.userId);
+    }
+
+    const messageResult: Message = {
+      id: msg.id,
+      chatId: msg.chatId,
+      senderId: msg.senderId,
+      senderName: msg.senderName,
+      senderRole: msg.senderRole as any,
+      senderAvatar: msg.senderAvatar,
+      content: msg.content,
+      type: msg.type as any,
+      timestamp: timeStr,
+      fileUrl: msg.fileUrl,
+      fileName: msg.fileName,
+      voiceDuration: msg.voiceDuration,
+      voiceTranscript: msg.voiceTranscript,
+      isVoiceTranscribed: msg.isVoiceTranscribed,
+      isVoiceTranslated: msg.isVoiceTranslated,
+      originalSpokenText: msg.originalSpokenText,
+      videoDuration: msg.videoDuration,
+      isPinned: msg.isPinned || false,
+      isEdited: true,
+      editedAt: msg.editedAt,
+      reactions,
+      readBy: [msg.senderId],
+      replyTo: msg.replyToId ? {
+        id: msg.replyToId,
+        content: msg.replyToContent || '',
+        senderName: msg.replyToSender || '',
+      } : undefined,
+    };
+
+    return { success: true, message: messageResult };
   }
 
   // Clear entire chat history for a group or direct chat (Principal or group admin only)

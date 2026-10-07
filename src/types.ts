@@ -59,6 +59,8 @@ export interface Message {
   reactions: Record<string, string[]>; // emoji -> array of userIds
   timestamp: string;
   readBy: string[];
+  isEdited?: boolean;
+  editedAt?: string;
 }
 
 export interface AuthState {

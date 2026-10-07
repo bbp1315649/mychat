@@ -38,7 +38,8 @@ import {
   Eraser,
   Sliders,
   AlertTriangle,
-  Timer
+  Timer,
+  Pencil
 } from 'lucide-react';
 import { CameraCaptureModal } from './CameraCaptureModal';
 import { ImageLightboxModal } from './ImageLightboxModal';
@@ -70,6 +71,7 @@ interface ChatRoomProps {
   onPinMessage: (messageId: string) => void;
   onReactMessage: (messageId: string, emoji: string) => void;
   onDeleteMessage?: (messageId: string) => void;
+  onEditMessage?: (messageId: string, newContent: string) => Promise<void> | void;
   onRefreshGroups?: () => void;
 }
 
@@ -88,10 +90,14 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
   onPinMessage,
   onReactMessage,
   onDeleteMessage,
+  onEditMessage,
   onRefreshGroups,
 }) => {
   const [inputText, setInputText] = useState('');
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
+  const [editingMessage, setEditingMessage] = useState<Message | null>(null);
+  const [editToast, setEditToast] = useState<string | null>(null);
+  const messageInputRef = useRef<HTMLInputElement>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordTimer, setRecordTimer] = useState(0);
   const [activeAudioId, setActiveAudioId] = useState<string | null>(null);
@@ -486,13 +492,38 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages.length]);
 
-  // Handle Send text message
+  // Handle Send text message or Save edited message
   const handleSend = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!inputText.trim() || isSending) return;
 
-    setIsSending(true);
     const textToSend = inputText.trim();
+
+    // If currently editing an existing message
+    if (editingMessage) {
+      const msgIdToEdit = editingMessage.id;
+      setIsSending(true);
+      setInputText('');
+      setEditingMessage(null);
+
+      try {
+        if (onEditMessage) {
+          await onEditMessage(msgIdToEdit, textToSend);
+        } else {
+          await api.editMessage(msgIdToEdit, textToSend, currentUser.id);
+        }
+        setEditToast('پیام با موفقیت ویرایش شد');
+        setTimeout(() => setEditToast(null), 3000);
+      } catch (err: any) {
+        alert(err.message || 'خطا در ویرایش پیام');
+        setInputText(textToSend);
+      } finally {
+        setIsSending(false);
+      }
+      return;
+    }
+
+    setIsSending(true);
     setInputText('');
     const replyToSend = replyTarget ? {
       id: replyTarget.id,
@@ -1255,6 +1286,12 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                         <Pin className="w-2.5 h-2.5 text-amber-400 rotate-45 mr-1" />
                       </span>
                     )}
+                    {msg.isEdited && (
+                      <span className="text-[9px] opacity-80 font-medium flex items-center gap-0.5 text-amber-300/90" title="این پیام ویرایش شده است">
+                        <Pencil className="w-2.5 h-2.5" />
+                        <span>ویرایش‌شده</span>
+                      </span>
+                    )}
                     <span className="font-mono">{msg.timestamp}</span>
                     {isMe && (
                       <CheckCheck className="w-3 h-3 text-blue-200" />
@@ -1294,6 +1331,26 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                   >
                     <Reply className="w-3 h-3" />
                   </button>
+
+                  {/* Edit message button (only for sender's own text or announcement message) */}
+                  {isMe && (!msg.type || msg.type === 'text' || msg.type === 'announcement') && !isSticker && (
+                    <button
+                      onClick={() => {
+                        setEditingMessage(msg);
+                        setReplyTarget(null);
+                        setInputText(msg.content);
+                        setTimeout(() => messageInputRef.current?.focus(), 50);
+                      }}
+                      className={`p-1 rounded transition-colors ${
+                        editingMessage?.id === msg.id
+                          ? 'text-amber-400 bg-amber-500/20'
+                          : 'hover:text-amber-300 hover:bg-slate-800'
+                      }`}
+                      title="ویرایش پیام ارسال شده"
+                    >
+                      <Pencil className="w-3 h-3" />
+                    </button>
+                  )}
 
                   {/* Copy message button */}
                   {(msg.content || msg.voiceTranscript) && !isSticker && (
@@ -1403,6 +1460,36 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
             onClick={() => setReplyTarget(null)}
             className="text-slate-400 hover:text-slate-200 p-1"
           >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Editing Message Banner */}
+      {editingMessage && (
+        <div className="bg-amber-950/70 border-t border-amber-500/40 px-3 py-2 flex items-center justify-between text-xs backdrop-blur-md animate-in slide-in-from-bottom-1">
+          <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
+            <div className="p-1 rounded-lg bg-amber-500/20 text-amber-400 shrink-0">
+              <Pencil className="w-3.5 h-3.5" />
+            </div>
+            <div className="truncate text-[11px] flex-1">
+              <div className="font-bold text-amber-300 flex items-center gap-1.5">
+                <span>ویرایش پیام</span>
+                <span className="text-[10px] text-amber-400/80 font-normal">(برای لغو، دکمه انصراف یا Esc را بزنید)</span>
+              </div>
+              <div className="text-slate-300 truncate text-[10px] opacity-90 mt-0.5">{editingMessage.content}</div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setEditingMessage(null);
+              setInputText('');
+            }}
+            className="text-slate-300 hover:text-rose-400 px-2 py-1 rounded-lg hover:bg-slate-800 transition-colors flex items-center gap-1 text-[11px] shrink-0 font-medium"
+            title="انصراف از ویرایش پیام"
+          >
+            <span>انصراف</span>
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -1995,6 +2082,23 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
               </div>
             )}
 
+            {/* Edit Toast Banner */}
+            {editToast && (
+              <div className="mb-1.5 px-3 py-1.5 bg-emerald-500/15 border border-emerald-500/40 rounded-xl flex items-center justify-between text-xs text-emerald-300 animate-in fade-in slide-in-from-bottom-1">
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="font-semibold text-[11px]">{editToast}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditToast(null)}
+                  className="text-emerald-400/70 hover:text-emerald-200 p-0.5"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+
             <form onSubmit={handleSend} className="flex items-center gap-1.5">
               {/* Attachments Toggle */}
               <button
@@ -2068,11 +2172,26 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
               {/* Input field */}
               <div className="flex-1 relative">
                 <input
+                  ref={messageInputRef}
                   type="text"
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
-                  placeholder="پیام خود را بنویسید یا با صوت بگویید..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape' && editingMessage) {
+                      setEditingMessage(null);
+                      setInputText('');
+                    }
+                  }}
+                  placeholder={
+                    editingMessage
+                      ? 'ویرایش پیام... متن اصلاح‌شده را بنویسید (Esc برای لغو)'
+                      : 'پیام خود را بنویسید یا با صوت بگویید...'
+                  }
+                  className={`w-full rounded-xl px-3.5 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none transition-colors ${
+                    editingMessage
+                      ? 'bg-amber-950/30 border border-amber-500/70 focus:border-amber-400 focus:ring-1 focus:ring-amber-400/40 text-amber-50'
+                      : 'bg-slate-950 border border-slate-800 focus:border-indigo-500'
+                  }`}
                 />
               </div>
 
@@ -2096,7 +2215,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
               </button>
 
               {/* Record Voice Note (with transcription and audio) */}
-              {inputText.trim().length === 0 && !isVoiceTyping && (
+              {!editingMessage && inputText.trim().length === 0 && !isVoiceTyping && (
                 <button
                   type="button"
                   onClick={startRecording}
@@ -2107,14 +2226,25 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                 </button>
               )}
 
-              {/* Send Button (Send icon strictly pointing up-right) */}
+              {/* Send or Save Button */}
               <button
                 type="submit"
                 disabled={!inputText.trim()}
-                className="p-2 bg-blue-600 hover:bg-blue-500 active:scale-95 disabled:opacity-40 disabled:pointer-events-none text-white rounded-xl shadow-md shadow-blue-500/20 transition-all"
-                title="ارسال پیام"
+                className={`p-2 active:scale-95 disabled:opacity-40 disabled:pointer-events-none text-white rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 ${
+                  editingMessage
+                    ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-600/30 px-3'
+                    : 'bg-blue-600 hover:bg-blue-500 shadow-blue-500/20'
+                }`}
+                title={editingMessage ? 'ذخیره پیام ویرایش شده' : 'ارسال پیام'}
               >
-                <Send className="w-4 h-4" />
+                {editingMessage ? (
+                  <>
+                    <Check className="w-4 h-4 text-white" />
+                    <span className="text-[11px] font-bold">ذخیره</span>
+                  </>
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
               </button>
             </form>
           </div>

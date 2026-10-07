@@ -487,6 +487,7 @@ export const api = {
         isVoiceTranslated: m.is_voice_translated,
         originalSpokenText: m.original_spoken_text,
         isPinned: m.is_pinned || false,
+        isEdited: m.is_edited || false,
         reactions,
         readBy: [m.sender_id],
         replyTo: m.reply_to_id ? {
@@ -611,6 +612,33 @@ export const api = {
 
   async deleteMessage(messageId: string, userId: string): Promise<void> {
     await supabase.from('messages').delete().eq('id', messageId);
+  },
+
+  async editMessage(messageId: string, newContent: string, userId: string): Promise<boolean> {
+    const clean = newContent.trim();
+    if (!clean) return false;
+
+    // Supabase update (for GitHub Pages / Supabase mode)
+    try {
+      await supabase.from('messages').update({ content: clean }).eq('id', messageId);
+    } catch (e) {
+      console.warn('Supabase edit message warning:', e);
+    }
+
+    // Backend API update (for Express/Fullstack mode)
+    if (!isStaticHost) {
+      try {
+        await fetch(`/api/messages/${messageId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: clean, userId }),
+        });
+      } catch (err) {
+        // ignore network error in static preview
+      }
+    }
+
+    return true;
   },
 
   async clearChatHistory(chatId: string, userId: string): Promise<{ success: boolean; deletedCount: number }> {
@@ -888,6 +916,16 @@ export class RealtimeClient {
           })
           .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' }, (payload) => {
             this.emit('message:deleted', { messageId: payload.old?.id, chatId: payload.old?.chat_id });
+          })
+          .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload) => {
+            const m = payload.new as any;
+            if (m && m.id) {
+              this.emit('message:edited', {
+                messageId: m.id,
+                content: m.content,
+                isEdited: true,
+              });
+            }
           })
           .subscribe();
       }

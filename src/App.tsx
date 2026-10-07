@@ -205,6 +205,10 @@ export default function App() {
       setMessages(prev => prev.filter(m => m.id !== messageId));
     });
 
+    const unsubMsgEdited = realtime.on('message:edited', ({ messageId, content }: { messageId: string; content: string }) => {
+      setMessages(prev => prev.map(m => m.id === messageId ? { ...m, content, isEdited: true } : m));
+    });
+
     const unsubChatCleared = realtime.on('chat:cleared', ({ chatId }: { chatId: string; deletedCount: number }) => {
       setMessages(prev => prev.filter(m => m.chatId !== chatId));
     });
@@ -323,6 +327,7 @@ export default function App() {
     return () => {
       unsubMsg();
       unsubMsgDeleted();
+      unsubMsgEdited();
       unsubChatCleared();
       unsubAutoDeleteUpdated();
       unsubAutoPurged();
@@ -446,6 +451,23 @@ export default function App() {
     }
   };
 
+  // Edit message (sender only)
+  // Requirement: "پیامی که می فرستیم قابلیت ویرایش داشته باشه"
+  const handleEditMessage = async (messageId: string, newContent: string) => {
+    if (!currentUser) return;
+    try {
+      // Optimistic update
+      setMessages(prev => prev.map(m => m.id === messageId ? { ...m, content: newContent, isEdited: true } : m));
+      await api.editMessage(messageId, newContent, currentUser.id);
+    } catch (err: any) {
+      console.error('Failed to edit message:', err);
+      if (activeChat) {
+        const msgs = await api.getMessages(activeChat.id);
+        setMessages(msgs);
+      }
+    }
+  };
+
   // Group Created Callback
   const handleGroupCreated = (newGroup: Group) => {
     setGroups(prev => [...prev, newGroup]);
@@ -532,6 +554,7 @@ export default function App() {
                 onPinMessage={handlePinMessage}
                 onReactMessage={handleReactMessage}
                 onDeleteMessage={handleDeleteMessage}
+                onEditMessage={handleEditMessage}
                 onRefreshGroups={() => loadData(currentUser || undefined)}
               />
             ) : (
