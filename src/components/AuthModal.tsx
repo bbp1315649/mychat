@@ -153,7 +153,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
                 maxLength={8}
                 value={personnelCode}
                 onChange={(e) => setPersonnelCode(toEnglishDigits(e.target.value).replace(/\D/g, ''))}
-                placeholder="مثال: 20859009"
+                placeholder="مثال: ۱۲۳۴۵۶۷۸"
                 className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-blue-500 transition-colors pr-9 text-left font-mono"
                 dir="ltr"
               />
@@ -185,75 +185,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
           >
             {loading ? 'در حال ورود...' : 'ورود به حساب کاربری'}
           </button>
-
-          {/* Quick 1-Click Login for Testing */}
-          <div className="mt-4 pt-3 border-t border-slate-800 space-y-2">
-            <div className="text-[10px] text-slate-400 font-semibold flex items-center justify-between">
-              <span>ورود سریع برای تست سامانه:</span>
-              <span className="text-[9px] text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded">بدون نیاز به تایپ</span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={async () => {
-                  setPersonnelCode('20859009');
-                  setPassword('bbp13156');
-                  setError(null);
-                  setLoading(true);
-                  try {
-                    const user = await api.login('20859009', 'bbp13156');
-                    onSuccess(user);
-                  } catch (err: any) {
-                    setError(err.message || 'خطا در ورود سریع');
-                  } finally {
-                    setLoading(false);
-                  }
-                }}
-                disabled={loading}
-                className="p-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-right flex flex-col gap-0.5 transition-all active:scale-95"
-              >
-                <div className="text-[11px] font-bold flex items-center gap-1">
-                  <span>👑</span>
-                  <span>مدیر مدرسه</span>
-                </div>
-                <div className="text-[9px] opacity-75 font-mono">20859009</div>
-              </button>
-
-              <button
-                type="button"
-                onClick={async () => {
-                  setPersonnelCode('10003355');
-                  setPassword('math_pass_123');
-                  setError(null);
-                  setLoading(true);
-                  try {
-                    const user = await api.login('10003355', 'math_pass_123');
-                    onSuccess(user);
-                  } catch (err: any) {
-                    setError(err.message || 'خطا در ورود سریع');
-                  } finally {
-                    setLoading(false);
-                  }
-                }}
-                disabled={loading}
-                className="p-2 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-300 text-right flex flex-col gap-0.5 transition-all active:scale-95"
-              >
-                <div className="text-[11px] font-bold flex items-center gap-1">
-                  <span>📐</span>
-                  <span>دبیر ریاضی</span>
-                </div>
-                <div className="text-[9px] opacity-75 font-mono">10003355</div>
-              </button>
-            </div>
-          </div>
-
-          {/* Footer note */}
-          <div className="pt-2 text-center">
-            <span className="text-[10px] text-slate-500">
-              کد پرسنلی مدیر: 20859009 | رمز: bbp13156
-            </span>
-          </div>
         </form>
       )}
 

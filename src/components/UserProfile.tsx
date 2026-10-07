@@ -406,7 +406,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({
                   onChange={(e) => setPersonnelCode(e.target.value.replace(/\D/g, ''))}
                   required
                   dir="ltr"
-                  placeholder="20859009"
+                  placeholder="مثال: ۱۲۳۴۵۶۷۸"
                   className="w-full bg-slate-950 border border-slate-800 focus:border-amber-500 rounded-2xl px-3.5 py-2.5 text-xs text-slate-100 font-mono text-left placeholder:text-slate-600 focus:outline-none transition-colors"
                 />
               </div>
