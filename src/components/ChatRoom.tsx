@@ -39,7 +39,8 @@ import {
   Sliders,
   AlertTriangle,
   Timer,
-  Pencil
+  Pencil,
+  Minimize2
 } from 'lucide-react';
 import { CameraCaptureModal } from './CameraCaptureModal';
 import { ImageLightboxModal } from './ImageLightboxModal';
@@ -97,7 +98,8 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
   const [replyTarget, setReplyTarget] = useState<Message | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [editToast, setEditToast] = useState<string | null>(null);
-  const messageInputRef = useRef<HTMLInputElement>(null);
+  const messageInputRef = useRef<HTMLTextAreaElement>(null);
+  const [isExpandedInput, setIsExpandedInput] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordTimer, setRecordTimer] = useState(0);
   const [activeAudioId, setActiveAudioId] = useState<string | null>(null);
@@ -1480,18 +1482,30 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
               <div className="text-slate-300 truncate text-[10px] opacity-90 mt-0.5">{editingMessage.content}</div>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              setEditingMessage(null);
-              setInputText('');
-            }}
-            className="text-slate-300 hover:text-rose-400 px-2 py-1 rounded-lg hover:bg-slate-800 transition-colors flex items-center gap-1 text-[11px] shrink-0 font-medium"
-            title="انصراف از ویرایش پیام"
-          >
-            <span>انصراف</span>
-            <X className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsExpandedInput(prev => !prev)}
+              className="text-amber-300 hover:text-amber-200 px-2 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/30 transition-colors flex items-center gap-1 text-[11px] font-medium"
+              title={isExpandedInput ? "کوچک کردن کادر" : "بزرگ کردن کادر برای ویرایش راحت‌تر"}
+            >
+              {isExpandedInput ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">{isExpandedInput ? "نمای عادی" : "کادر بزرگ"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setEditingMessage(null);
+                setInputText('');
+                setIsExpandedInput(false);
+              }}
+              className="text-slate-300 hover:text-rose-400 px-2 py-1 rounded-lg hover:bg-slate-800 transition-colors flex items-center gap-1 text-[11px] font-medium"
+              title="انصراف از ویرایش پیام"
+            >
+              <span>انصراف</span>
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -2099,153 +2113,227 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
               </div>
             )}
 
-            <form onSubmit={handleSend} className="flex items-center gap-1.5">
-              {/* Attachments Toggle */}
-              <button
-                type="button"
-                onClick={() => setShowAttachMenu(!showAttachMenu)}
-                className={`p-2 rounded-xl border transition-all ${
-                  showAttachMenu
-                    ? 'bg-blue-600 text-white border-blue-500'
-                    : 'bg-slate-950 hover:bg-slate-850 text-slate-400 border-slate-800'
-                }`}
-                title="پیوست بخشنامه، فایل یا گزارش"
-              >
-                <Paperclip className="w-4 h-4" />
-              </button>
-
-              {/* Direct Camera / Video Button */}
-              <button
-                type="button"
-                onClick={() => {
-                  setCameraModalMode('photo');
-                  setShowCameraModal(true);
-                }}
-                className="p-2 bg-slate-950 hover:bg-slate-850 hover:text-blue-400 text-slate-400 border border-slate-800 rounded-xl transition-colors"
-                title="عکاسی و فیلم‌برداری کلاسی"
-              >
-                <Camera className="w-4 h-4" />
-              </button>
-
-              {/* Persian <-> English Translator Toggle Button */}
-              <button
-                type="button"
-                onClick={() => {
-                  setShowTranslator(!showTranslator);
-                  setShowStickerDrawer(false);
-                  setShowAttachMenu(false);
-                  if (!showTranslator && inputText.trim()) {
-                    handleTranslateInput(inputText.trim());
-                  }
-                }}
-                className={`p-2 rounded-xl border transition-all flex items-center justify-center relative ${
-                  showTranslator
-                    ? 'bg-indigo-600 text-white border-indigo-500 shadow-md shadow-indigo-600/30'
-                    : 'bg-slate-950 hover:bg-slate-850 hover:text-indigo-300 text-slate-400 border-slate-800'
-                }`}
-                title="مترجم فارسی به انگلیسی در هنگام تایپ"
-              >
-                <Languages className="w-4 h-4" />
-                <span className="absolute -top-1 -right-1 text-[8px] bg-indigo-500 text-white font-mono px-1 rounded-full border border-slate-900 font-bold scale-90">
-                  EN
-                </span>
-              </button>
-
-              {/* Sticker Drawer Toggle */}
-              <button
-                type="button"
-                onClick={() => {
-                  setShowStickerDrawer(!showStickerDrawer);
-                  setShowTranslator(false);
-                  setShowAttachMenu(false);
-                }}
-                className={`p-2 rounded-xl border transition-all ${
-                  showStickerDrawer
-                    ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
-                    : 'bg-slate-950 hover:bg-slate-850 text-slate-400 border-slate-800'
-                }`}
-                title="استیکرها و نشان‌های تشویقی"
-              >
-                <Smile className="w-4 h-4" />
-              </button>
-
-              {/* Input field */}
-              <div className="flex-1 relative">
-                <input
+            <form onSubmit={handleSend} className="space-y-1.5">
+              {/* Main Input Box with Textarea */}
+              <div className="relative flex flex-col bg-slate-950 border border-slate-800 rounded-2xl focus-within:border-indigo-500/80 focus-within:ring-1 focus-within:ring-indigo-500/30 transition-all shadow-inner">
+                {/* Textarea */}
+                <textarea
                   ref={messageInputRef}
-                  type="text"
                   value={inputText}
+                  rows={isExpandedInput ? 5 : (editingMessage ? 3 : 2)}
                   onChange={(e) => setInputText(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Escape' && editingMessage) {
                       setEditingMessage(null);
                       setInputText('');
+                      setIsExpandedInput(false);
+                    } else if (e.key === 'Enter' && !e.shiftKey) {
+                      // On desktop (non-touch) pressing Enter without Shift submits; on mobile users can use Shift+Enter or tap the big send button
+                      if (window.innerWidth > 768) {
+                        e.preventDefault();
+                        handleSend();
+                      }
                     }
                   }}
                   placeholder={
                     editingMessage
-                      ? 'ویرایش پیام... متن اصلاح‌شده را بنویسید (Esc برای لغو)'
-                      : 'پیام خود را بنویسید یا با صوت بگویید...'
+                      ? 'ویرایش پیام... متن اصلاح‌شده را با راحتی بنویسید (Shift+Enter برای خط بعد)'
+                      : 'پیام خود را بنویسید یا با صوت بگویید (Shift+Enter برای خط بعد)...'
                   }
-                  className={`w-full rounded-xl px-3.5 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none transition-colors ${
+                  className={`w-full rounded-2xl px-3.5 py-2.5 text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none transition-colors resize-none leading-relaxed ${
                     editingMessage
-                      ? 'bg-amber-950/30 border border-amber-500/70 focus:border-amber-400 focus:ring-1 focus:ring-amber-400/40 text-amber-50'
-                      : 'bg-slate-950 border border-slate-800 focus:border-indigo-500'
+                      ? 'bg-amber-950/25 border-b border-amber-500/30 text-amber-50'
+                      : 'bg-transparent'
                   }`}
+                  style={{
+                    minHeight: isExpandedInput ? '140px' : (editingMessage ? '72px' : '44px'),
+                    maxHeight: isExpandedInput ? '260px' : '150px'
+                  }}
                 />
+
+                {/* Sub-bar inside textarea container: expand button & char count if long */}
+                <div className="flex items-center justify-between px-2.5 py-1 text-[10px] text-slate-400 border-t border-slate-900/80 bg-slate-950/40 rounded-b-2xl">
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setIsExpandedInput(prev => !prev)}
+                      className="text-slate-400 hover:text-slate-200 flex items-center gap-1 px-1.5 py-0.5 rounded-md hover:bg-slate-800/60 transition-colors"
+                      title={isExpandedInput ? "کوچک کردن کادر" : "بزرگ کردن کادر برای ویرایش راحت‌تر در موبایل"}
+                    >
+                      {isExpandedInput ? (
+                        <>
+                          <Minimize2 className="w-3 h-3 text-indigo-400" />
+                          <span>کوچک کردن کادر</span>
+                        </>
+                      ) : (
+                        <>
+                          <Maximize2 className="w-3 h-3 text-indigo-400" />
+                          <span>بزرگ‌نمایی کادر تایپ</span>
+                        </>
+                      )}
+                    </button>
+                    {inputText.length > 50 && (
+                      <span className="text-slate-400 font-mono text-[9px]">
+                        {inputText.length} کاراکتر
+                      </span>
+                    )}
+                  </div>
+
+                  {editingMessage && (
+                    <span className="text-amber-400 text-[10px] font-medium flex items-center gap-1">
+                      <Pencil className="w-2.5 h-2.5" />
+                      <span>حالت ویرایش</span>
+                    </span>
+                  )}
+                </div>
               </div>
 
-              {/* Voice Typing / Speech-to-Text Button */}
-              <button
-                type="button"
-                onClick={toggleVoiceTyping}
-                className={`p-2 rounded-xl border transition-all relative ${
-                  isVoiceTyping
-                    ? 'bg-rose-600 text-white border-rose-500 animate-pulse shadow-md shadow-rose-500/30'
-                    : 'bg-slate-950 hover:bg-slate-850 text-slate-400 hover:text-indigo-400 border-slate-800'
-                }`}
-                title={isVoiceTyping ? 'توقف تبدیل صوت به متن' : (voiceTypingTargetLang === 'en' ? 'تایپ صوتی و ترجمه همزمان به انگلیسی' : 'تایپ صوتی زنده (تبدیل گفتار به متن)')}
-              >
-                <Mic className={`w-4 h-4 ${isVoiceTyping ? 'animate-bounce text-white' : ''}`} />
-                {voiceTypingTargetLang === 'en' && (
-                  <span className="absolute -top-1 -right-1 text-[8px] bg-blue-500 text-white font-mono px-1 rounded-full border border-slate-900 font-bold scale-90">
-                    EN
-                  </span>
-                )}
-              </button>
+              {/* Bottom Actions Row: Tools + Voice + Big Send Button */}
+              <div className="flex items-center justify-between gap-1">
+                {/* Left Tools */}
+                <div className="flex items-center gap-1 flex-wrap">
+                  {/* Attachments Toggle */}
+                  <button
+                    type="button"
+                    onClick={() => setShowAttachMenu(!showAttachMenu)}
+                    className={`p-2 rounded-xl border transition-all ${
+                      showAttachMenu
+                        ? 'bg-blue-600 text-white border-blue-500'
+                        : 'bg-slate-950 hover:bg-slate-850 text-slate-400 border-slate-800'
+                    }`}
+                    title="پیوست بخشنامه، فایل یا گزارش"
+                  >
+                    <Paperclip className="w-4 h-4" />
+                  </button>
 
-              {/* Record Voice Note (with transcription and audio) */}
-              {!editingMessage && inputText.trim().length === 0 && !isVoiceTyping && (
-                <button
-                  type="button"
-                  onClick={startRecording}
-                  className="p-2 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-xl text-slate-400 hover:text-rose-400 transition-colors"
-                  title="ضبط پیام صوتی (با قابلیت تبدیل به متن نوشتاری و ارسال)"
-                >
-                  <Volume2 className="w-4 h-4" />
-                </button>
-              )}
+                  {/* Direct Camera / Video Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCameraModalMode('photo');
+                      setShowCameraModal(true);
+                    }}
+                    className="p-2 bg-slate-950 hover:bg-slate-850 hover:text-blue-400 text-slate-400 border border-slate-800 rounded-xl transition-colors"
+                    title="عکاسی و فیلم‌برداری کلاسی"
+                  >
+                    <Camera className="w-4 h-4" />
+                  </button>
 
-              {/* Send or Save Button */}
-              <button
-                type="submit"
-                disabled={!inputText.trim()}
-                className={`p-2 active:scale-95 disabled:opacity-40 disabled:pointer-events-none text-white rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 ${
-                  editingMessage
-                    ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-600/30 px-3'
-                    : 'bg-blue-600 hover:bg-blue-500 shadow-blue-500/20'
-                }`}
-                title={editingMessage ? 'ذخیره پیام ویرایش شده' : 'ارسال پیام'}
-              >
-                {editingMessage ? (
-                  <>
-                    <Check className="w-4 h-4 text-white" />
-                    <span className="text-[11px] font-bold">ذخیره</span>
-                  </>
-                ) : (
-                  <Send className="w-4 h-4" />
-                )}
-              </button>
+                  {/* Persian <-> English Translator Toggle Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowTranslator(!showTranslator);
+                      setShowStickerDrawer(false);
+                      setShowAttachMenu(false);
+                      if (!showTranslator && inputText.trim()) {
+                        handleTranslateInput(inputText.trim());
+                      }
+                    }}
+                    className={`p-2 rounded-xl border transition-all flex items-center justify-center relative ${
+                      showTranslator
+                        ? 'bg-indigo-600 text-white border-indigo-500 shadow-md shadow-indigo-600/30'
+                        : 'bg-slate-950 hover:bg-slate-850 hover:text-indigo-300 text-slate-400 border-slate-800'
+                    }`}
+                    title="مترجم فارسی به انگلیسی در هنگام تایپ"
+                  >
+                    <Languages className="w-4 h-4" />
+                    <span className="absolute -top-1 -right-1 text-[8px] bg-indigo-500 text-white font-mono px-1 rounded-full border border-slate-900 font-bold scale-90">
+                      EN
+                    </span>
+                  </button>
+
+                  {/* Sticker Drawer Toggle */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowStickerDrawer(!showStickerDrawer);
+                      setShowTranslator(false);
+                      setShowAttachMenu(false);
+                    }}
+                    className={`p-2 rounded-xl border transition-all ${
+                      showStickerDrawer
+                        ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                        : 'bg-slate-950 hover:bg-slate-850 text-slate-400 border-slate-800'
+                    }`}
+                    title="استیکرها و نشان‌های تشویقی"
+                  >
+                    <Smile className="w-4 h-4" />
+                  </button>
+
+                  {/* Voice Typing / Speech-to-Text Button */}
+                  <button
+                    type="button"
+                    onClick={toggleVoiceTyping}
+                    className={`p-2 rounded-xl border transition-all relative ${
+                      isVoiceTyping
+                        ? 'bg-rose-600 text-white border-rose-500 animate-pulse shadow-md shadow-rose-500/30'
+                        : 'bg-slate-950 hover:bg-slate-850 text-slate-400 hover:text-indigo-400 border-slate-800'
+                    }`}
+                    title={isVoiceTyping ? 'توقف تبدیل صوت به متن' : (voiceTypingTargetLang === 'en' ? 'تایپ صوتی و ترجمه همزمان به انگلیسی' : 'تایپ صوتی زنده (تبدیل گفتار به متن)')}
+                  >
+                    <Mic className={`w-4 h-4 ${isVoiceTyping ? 'animate-bounce text-white' : ''}`} />
+                    {voiceTypingTargetLang === 'en' && (
+                      <span className="absolute -top-1 -right-1 text-[8px] bg-blue-500 text-white font-mono px-1 rounded-full border border-slate-900 font-bold scale-90">
+                        EN
+                      </span>
+                    )}
+                  </button>
+
+                  {/* Record Voice Note (with transcription and audio) */}
+                  {!editingMessage && inputText.trim().length === 0 && !isVoiceTyping && (
+                    <button
+                      type="button"
+                      onClick={startRecording}
+                      className="p-2 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-xl text-slate-400 hover:text-rose-400 transition-colors"
+                      title="ضبط پیام صوتی (با قابلیت تبدیل به متن نوشتاری و ارسال)"
+                    >
+                      <Volume2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Right Send or Save Button */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {editingMessage && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingMessage(null);
+                        setInputText('');
+                        setIsExpandedInput(false);
+                      }}
+                      className="px-2.5 py-2 text-slate-300 hover:text-rose-400 hover:bg-slate-800 rounded-xl transition-colors text-xs font-medium"
+                      title="انصراف از ویرایش"
+                    >
+                      انصراف
+                    </button>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={!inputText.trim()}
+                    className={`px-3 py-2 active:scale-95 disabled:opacity-40 disabled:pointer-events-none text-white rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 font-bold ${
+                      editingMessage
+                        ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-600/30'
+                        : 'bg-blue-600 hover:bg-blue-500 shadow-blue-500/20'
+                    }`}
+                    title={editingMessage ? 'ذخیره پیام ویرایش شده' : 'ارسال پیام'}
+                  >
+                    {editingMessage ? (
+                      <>
+                        <Check className="w-4 h-4 text-white" />
+                        <span className="text-xs">ذخیره</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-4 h-4" />
+                        <span className="text-xs hidden sm:inline">ارسال</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
             </form>
           </div>
         )}
