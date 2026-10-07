@@ -243,12 +243,19 @@ export async function speakMessageText(
     );
 
     if (!isStaticHost) {
-      const audioUrl = `/api/tts?text=${encodeURIComponent(clean.slice(0, 400))}&lang=${encodeURIComponent(shortLang)}`;
-      const audio = new Audio(audioUrl);
+      const audioUrl = `/api/tts?text=${encodeURIComponent(clean.slice(0, 450))}&lang=${encodeURIComponent(shortLang)}`;
+      const audio = new Audio();
+      audio.preload = 'auto';
+      audio.src = audioUrl;
       currentAudio = audio;
 
-      // Apply speech speed rate to audio
-      audio.playbackRate = activeRate;
+      // Apply active speech speed rate
+      try {
+        audio.playbackRate = activeRate;
+      } catch {
+        // ignore
+      }
+
       audio.oncanplay = () => {
         try {
           audio.playbackRate = getSpeechRate();
@@ -258,10 +265,23 @@ export async function speakMessageText(
       };
 
       const playPromise = new Promise<boolean>((resolve, reject) => {
-        let hasStarted = false;
+        let isDone = false;
+        let timeoutId: any = null;
+
+        const finish = (ok: boolean) => {
+          if (isDone) return;
+          isDone = true;
+          if (timeoutId) clearTimeout(timeoutId);
+          if (currentAudio === audio) {
+            currentAudio = null;
+            notifyState({ isPlaying: false, messageId: null, text: '' });
+            if (ok) options?.onEnd?.();
+          }
+          resolve(ok);
+        };
 
         audio.onplaying = () => {
-          hasStarted = true;
+          if (timeoutId) clearTimeout(timeoutId);
           try {
             audio.playbackRate = getSpeechRate();
           } catch {
@@ -270,28 +290,24 @@ export async function speakMessageText(
         };
 
         audio.onended = () => {
-          if (currentAudio === audio) {
-            currentAudio = null;
-            notifyState({ isPlaying: false, messageId: null, text: '' });
-            options?.onEnd?.();
-          }
-          resolve(true);
+          finish(true);
         };
 
         audio.onerror = () => {
+          if (timeoutId) clearTimeout(timeoutId);
           reject(new Error('Audio playback failed'));
         };
 
-        // Safety timeout if audio cannot load within 4 seconds
-        setTimeout(() => {
-          if (!hasStarted && currentAudio === audio) {
+        // Safety timeout if audio cannot load or start within 7 seconds
+        timeoutId = setTimeout(() => {
+          if (currentAudio === audio && audio.paused) {
             reject(new Error('Audio load timeout'));
           }
-        }, 4000);
+        }, 7000);
       });
 
       await audio.play();
-      // Successfully started playing via server audio!
+      // Successfully started playing via neural server audio!
       await playPromise;
       return true;
     }

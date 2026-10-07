@@ -778,38 +778,119 @@ app.post('/api/translate', async (req, res) => {
   }
 });
 
-// 14. Text-To-Speech (TTS / تبدیل متن به گفتار صوتی با صدای طبیعی)
+// In-memory cache for synthesized speech to provide instant response
+const ttsAudioCache = new Map<string, { buffer: Buffer; timestamp: number }>();
+
+function getVoiceForLang(langCode: string): { voice: string; locale: string } {
+  const code = (langCode || 'fa').toLowerCase();
+  if (code.startsWith('fa')) {
+    // Official Microsoft Neural Persian voice (Dilara) - high natural quality
+    return { voice: 'fa-IR-DilaraNeural', locale: 'fa-IR' };
+  }
+  if (code.startsWith('ar')) {
+    return { voice: 'ar-SA-ZariyahNeural', locale: 'ar-SA' };
+  }
+  if (code.startsWith('en')) {
+    return { voice: 'en-US-AriaNeural', locale: 'en-US' };
+  }
+  if (code.startsWith('fr')) {
+    return { voice: 'fr-FR-DeniseNeural', locale: 'fr-FR' };
+  }
+  if (code.startsWith('de')) {
+    return { voice: 'de-DE-KatjaNeural', locale: 'de-DE' };
+  }
+  if (code.startsWith('es')) {
+    return { voice: 'es-ES-ElviraNeural', locale: 'es-ES' };
+  }
+  return { voice: 'fa-IR-DilaraNeural', locale: 'fa-IR' };
+}
+
+// 14. Text-To-Speech (TTS / تبدیل هوشمند و طبیعی متن به گفتار با پشتیبانی کامل از زبان فارسی)
 app.get(['/api/tts', '/api/speech'], async (req, res) => {
   try {
     const text = (req.query.text || req.body?.text) as string;
     const lang = (req.query.lang || req.body?.lang || 'fa') as string;
+    const rateParam = req.query.rate as string;
+
     if (!text || typeof text !== 'string' || !text.trim()) {
-      return res.status(400).json({ error: 'Text parameter is required' });
+      return res.status(400).json({ error: 'متن برای تبدیل به گفتار الزامی است' });
     }
 
-    const cleanText = text.trim().slice(0, 450);
-    const langCode = lang.startsWith('fa') ? 'fa' : lang.startsWith('ar') ? 'ar' : lang.startsWith('en') ? 'en' : lang.slice(0, 2);
+    const cleanText = text.trim().slice(0, 500);
+    const { voice, locale } = getVoiceForLang(lang);
 
-    const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(cleanText)}&tl=${langCode}&client=tw-ob`;
-    const audioRes = await fetch(ttsUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Referer': 'https://translate.google.com/',
-      },
-      signal: AbortSignal.timeout(5000),
-    });
+    // Calculate rate string if requested
+    let rateStr = '+0%';
+    if (rateParam) {
+      const parsedRate = parseFloat(rateParam);
+      if (!isNaN(parsedRate) && parsedRate >= 0.5 && parsedRate <= 2.0) {
+        const percent = Math.round((parsedRate - 1.0) * 100);
+        rateStr = `${percent >= 0 ? '+' : ''}${percent}%`;
+      }
+    }
 
-    if (audioRes.ok && audioRes.body) {
+    const cacheKey = `${voice}:${rateStr}:${cleanText}`;
+    const cached = ttsAudioCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp < 3600_000 * 24)) {
       res.setHeader('Content-Type', 'audio/mpeg');
       res.setHeader('Cache-Control', 'public, max-age=86400');
-      const arrayBuffer = await audioRes.arrayBuffer();
-      return res.send(Buffer.from(arrayBuffer));
+      return res.send(cached.buffer);
     }
 
-    res.status(502).json({ error: 'TTS audio service temporary unavailable' });
+    // 1. Primary Engine: Neural Edge TTS (Fully supports Persian / fa-IR-DilaraNeural)
+    try {
+      // @ts-ignore
+      const edgeMod: any = await import('@andresaya/edge-tts');
+      const EdgeTTSClass: any = edgeMod.EdgeTTS || edgeMod.default?.EdgeTTS || edgeMod.default;
+      const tts: any = new EdgeTTSClass({
+        voice,
+        lang: locale,
+        rate: rateStr,
+        outputFormat: 'audio-24khz-48kbitrate-mono-mp3'
+      });
+
+      await tts.synthesize(cleanText, voice, { rate: rateStr });
+      const buffer = await tts.toBuffer();
+
+      if (buffer && buffer.length > 0) {
+        // Keep cache manageable
+        if (ttsAudioCache.size > 250) {
+          const firstKey = ttsAudioCache.keys().next().value;
+          if (firstKey) ttsAudioCache.delete(firstKey);
+        }
+        ttsAudioCache.set(cacheKey, { buffer, timestamp: Date.now() });
+
+        res.setHeader('Content-Type', 'audio/mpeg');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        return res.send(buffer);
+      }
+    } catch (edgeErr: any) {
+      console.warn('EdgeTTS synthesis error, attempting fallback:', edgeErr?.message || edgeErr);
+    }
+
+    // 2. Secondary Engine: Google Translate TTS fallback for non-Persian languages
+    if (!lang.startsWith('fa')) {
+      const langCode = lang.startsWith('en') ? 'en' : lang.startsWith('ar') ? 'ar' : lang.slice(0, 2);
+      const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(cleanText.slice(0, 200))}&tl=${langCode}&client=tw-ob`;
+      const fallbackRes = await fetch(ttsUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Referer': 'https://translate.google.com/',
+        },
+        signal: AbortSignal.timeout(4000),
+      });
+
+      if (fallbackRes.ok && fallbackRes.body) {
+        const arr = await fallbackRes.arrayBuffer();
+        res.setHeader('Content-Type', 'audio/mpeg');
+        return res.send(Buffer.from(arr));
+      }
+    }
+
+    res.status(502).json({ error: 'امکان تولید گفتار صوتی در حال حاضر میسر نشد' });
   } catch (err: any) {
-    console.warn('TTS error:', err?.message || err);
-    res.status(500).json({ error: 'TTS generation failed' });
+    console.error('TTS endpoint error:', err);
+    res.status(500).json({ error: 'خطای سرور در تبدیل متن به گفتار' });
   }
 });
 
