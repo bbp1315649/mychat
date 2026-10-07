@@ -40,7 +40,8 @@ import {
   AlertTriangle,
   Timer,
   Pencil,
-  Minimize2
+  Minimize2,
+  VolumeX
 } from 'lucide-react';
 import { CameraCaptureModal } from './CameraCaptureModal';
 import { ImageLightboxModal } from './ImageLightboxModal';
@@ -56,6 +57,13 @@ import {
   SpeechRecognitionController, 
   SCHOOL_VOICE_TEMPLATES 
 } from '../utils/speechToText';
+import {
+  speakMessageText,
+  stopSpeech,
+  subscribeSpeechState,
+  detectLanguage,
+  SpeechPlaybackState
+} from '../utils/textToSpeech';
 
 interface ChatRoomProps {
   chatId: string;
@@ -294,6 +302,45 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
   // Long-press cancel handler
   const handleCancelLongPress = () => {
     clearTimeout(longPressTimerRef.current);
+  };
+
+  // Text-To-Speech (TTS / تبدیل متن پیام به گفتار صوتی با همان زبان)
+  // Requirement: "میشه در چت روی متن پیام ها بزنیم و به همان زبانی که نوشته شده با صدا گفتار بشه"
+  const [speechState, setSpeechState] = useState<SpeechPlaybackState>({
+    isPlaying: false,
+    messageId: null,
+    text: '',
+    lang: '',
+    langLabel: '',
+  });
+
+  useEffect(() => {
+    const unsub = subscribeSpeechState((state) => {
+      setSpeechState(state);
+    });
+    return () => {
+      unsub();
+      stopSpeech();
+    };
+  }, []);
+
+  const handleToggleSpeakMessage = (text: string, messageId: string, forceLang?: string) => {
+    if (isLongPressTriggeredRef.current) {
+      isLongPressTriggeredRef.current = false;
+      return;
+    }
+
+    if (speechState.isPlaying && speechState.messageId === messageId) {
+      stopSpeech();
+      return;
+    }
+
+    speakMessageText(text, messageId, {
+      forceLang,
+      onError: (err) => {
+        console.warn('Speech playback failed:', err);
+      },
+    });
   };
 
   // Send photo captured via camera or selected from device
@@ -1067,6 +1114,8 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                   className={`max-w-[85%] rounded-2xl shadow-md relative transition-all cursor-pointer select-text ${
                     copiedMessageId === msg.id ? 'ring-2 ring-emerald-400 scale-[1.01]' : ''
                   } ${
+                    speechState.isPlaying && speechState.messageId === msg.id ? 'ring-2 ring-emerald-400/90 shadow-lg shadow-emerald-500/25' : ''
+                  } ${
                     isMedia ? 'p-1.5' : isSticker ? 'p-1 bg-transparent shadow-none' : 'p-3'
                   } ${
                     msg.type === 'announcement'
@@ -1113,12 +1162,27 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                         onPause={() => setActiveAudioId(null)}
                       />
                       {msg.voiceTranscript && (
-                        <div className="p-2 rounded-xl bg-black/25 border border-white/10 text-xs text-slate-100">
+                        <div 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleSpeakMessage(msg.voiceTranscript!, `${msg.id}_transcript`);
+                          }}
+                          className={`p-2 rounded-xl bg-black/25 border text-xs text-slate-100 cursor-pointer transition-all ${
+                            speechState.isPlaying && speechState.messageId === `${msg.id}_transcript`
+                              ? 'border-emerald-400 ring-1 ring-emerald-400/60'
+                              : 'border-white/10 hover:border-emerald-500/30'
+                          }`}
+                          title="ضربه برای شنیدن متن پیاده‌شده با صدا"
+                        >
                           <div className="flex items-center justify-between text-[10px] text-slate-300 mb-1">
                             <span className="flex items-center gap-1 text-emerald-300 font-bold">
                               <Sparkles className="w-3 h-3 text-emerald-400" />
                               <span>متن گفتار صوتی:</span>
                             </span>
+                            <div className="flex items-center gap-1 text-[9px] text-emerald-300">
+                              <Volume2 className={`w-3.5 h-3.5 ${speechState.isPlaying && speechState.messageId === `${msg.id}_transcript` ? 'text-emerald-400 animate-pulse' : 'text-slate-400'}`} />
+                              <span>ضربه برای شنیدن</span>
+                            </div>
                           </div>
                           <p className="whitespace-pre-wrap leading-relaxed select-text font-medium text-slate-100 text-[11px]">
                             {msg.voiceTranscript}
@@ -1236,12 +1300,42 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                           {msg.content}
                         </div>
                       ) : (
-                        <p
-                          dir={msg.isVoiceTranslated ? 'ltr' : 'auto'}
-                          className={`text-xs leading-relaxed whitespace-pre-wrap select-text ${isMedia ? 'px-1.5 pt-1.5 pb-0.5' : ''} ${msg.isVoiceTranslated ? 'font-sans tracking-wide text-slate-100' : ''}`}
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleSpeakMessage(msg.content, msg.id);
+                          }}
+                          className="cursor-pointer group/text relative select-text"
+                          title="برای شنیدن با صدا (به همان زبان پیام) روی متن بزنید"
                         >
-                          {msg.content}
-                        </p>
+                          <p
+                            dir={msg.isVoiceTranslated ? 'ltr' : 'auto'}
+                            className={`text-xs leading-relaxed whitespace-pre-wrap select-text transition-colors ${
+                              isMedia ? 'px-1.5 pt-1.5 pb-0.5' : ''
+                            } ${
+                              msg.isVoiceTranslated ? 'font-sans tracking-wide text-slate-100' : ''
+                            } ${
+                              speechState.isPlaying && speechState.messageId === msg.id
+                                ? 'text-emerald-200 font-medium'
+                                : ''
+                            }`}
+                          >
+                            {msg.content}
+                          </p>
+
+                          {/* Active Speaking Indicator on the message */}
+                          {speechState.isPlaying && speechState.messageId === msg.id && (
+                            <div className="mt-1.5 pt-1 border-t border-white/20 flex items-center justify-between gap-1 text-[10px] text-emerald-300 font-medium select-none animate-fadeIn">
+                              <span className="flex items-center gap-1">
+                                <Volume2 className="w-3.5 h-3.5 text-emerald-400 animate-pulse shrink-0" />
+                                <span>در حال پخش صدا با زبان {speechState.langLabel || 'پیام'}...</span>
+                              </span>
+                              <span className="text-[9px] bg-emerald-500/25 px-1.5 py-0.2 rounded text-emerald-200 border border-emerald-400/40 shrink-0">
+                                توقف
+                              </span>
+                            </div>
+                          )}
+                        </div>
                       )}
                     </>
                   )}
@@ -1254,35 +1348,101 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                     </div>
                   )}
                   {messageTranslations[msg.id]?.translated && (
-                    <div className="mt-2 pt-1.5 border-t border-white/15 text-xs text-indigo-100 bg-black/25 p-2 rounded-xl border border-indigo-400/20" dir="ltr">
-                      <div className="text-[9px] text-indigo-300 font-bold mb-0.5 flex items-center justify-between">
+                    <div 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleSpeakMessage(
+                          messageTranslations[msg.id].translated, 
+                          `${msg.id}_trans`, 
+                          /[\u0600-\u06FF]/.test(messageTranslations[msg.id].translated) ? 'fa-IR' : 'en-US'
+                        );
+                      }}
+                      className={`mt-2 pt-1.5 border-t text-xs text-indigo-100 bg-black/25 p-2 rounded-xl transition-colors cursor-pointer ${
+                        speechState.isPlaying && speechState.messageId === `${msg.id}_trans`
+                          ? 'border-emerald-400 ring-1 ring-emerald-400/60'
+                          : 'border-indigo-400/20 hover:border-indigo-400/40'
+                      }`}
+                      dir={/[\u0600-\u06FF]/.test(messageTranslations[msg.id].translated) ? 'rtl' : 'ltr'}
+                      title="ضربه برای شنیدن ترجمه با صدا"
+                    >
+                      <div className="text-[9px] text-indigo-300 font-bold mb-0.5 flex items-center justify-between select-none">
                         <span className="flex items-center gap-1">
                           <Languages className="w-3 h-3 text-indigo-400" />
-                          <span>Translation:</span>
+                          <span>ترجمه (ضربه برای شنیدن با صدا):</span>
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(messageTranslations[msg.id].translated);
-                          }}
-                          className="hover:text-white p-0.5"
-                          title="کپی ترجمه"
-                        >
-                          <Copy className="w-2.5 h-2.5" />
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleToggleSpeakMessage(
+                                messageTranslations[msg.id].translated, 
+                                `${msg.id}_trans`, 
+                                /[\u0600-\u06FF]/.test(messageTranslations[msg.id].translated) ? 'fa-IR' : 'en-US'
+                              );
+                            }}
+                            className="hover:text-white p-0.5 text-indigo-300"
+                            title="پخش صوتی ترجمه"
+                          >
+                            {speechState.isPlaying && speechState.messageId === `${msg.id}_trans` ? (
+                              <VolumeX className="w-3 h-3 text-emerald-400" />
+                            ) : (
+                              <Volume2 className="w-3 h-3" />
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigator.clipboard.writeText(messageTranslations[msg.id].translated);
+                            }}
+                            className="hover:text-white p-0.5"
+                            title="کپی ترجمه"
+                          >
+                            <Copy className="w-2.5 h-2.5" />
+                          </button>
+                        </div>
                       </div>
                       <div className="font-sans text-[11px] leading-relaxed select-text font-normal text-slate-100">
                         {messageTranslations[msg.id].translated}
                       </div>
+                      {speechState.isPlaying && speechState.messageId === `${msg.id}_trans` && (
+                        <div className="mt-1 text-[9px] text-emerald-300 flex items-center gap-1">
+                          <Volume2 className="w-3 h-3 animate-pulse" />
+                          <span>در حال خواندن ترجمه با صدای {speechState.langLabel || 'انگلیسی'}...</span>
+                        </div>
+                      )}
                     </div>
                   )}
 
-                  {/* Footer: Time, Pin icon, Read status */}
+                  {/* Footer: Time, Pin icon, Read status, Speaker button */}
                   <div className={`flex items-center justify-end gap-1 mt-1 text-[10px] ${
                     isMedia ? 'px-1.5 pb-0.5' : ''
                   } ${
                     isMe ? (isSticker ? 'text-slate-400' : 'text-blue-100/80') : 'text-slate-400'
                   }`}>
+                    {/* Speaker trigger on message bubble footer */}
+                    {msg.content && msg.type !== 'voice' && !isSticker && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleSpeakMessage(msg.content, msg.id);
+                        }}
+                        className={`p-0.5 rounded hover:bg-white/10 transition-colors ${
+                          speechState.isPlaying && speechState.messageId === msg.id
+                            ? 'text-emerald-300 animate-pulse'
+                            : 'opacity-60 hover:opacity-100'
+                        }`}
+                        title="پخش صوتی متن پیام به همان زبان"
+                      >
+                        {speechState.isPlaying && speechState.messageId === msg.id ? (
+                          <VolumeX className="w-2.5 h-2.5 text-emerald-300" />
+                        ) : (
+                          <Volume2 className="w-2.5 h-2.5" />
+                        )}
+                      </button>
+                    )}
                     {msg.isPinned && (
                       <span title="سنجاق شده">
                         <Pin className="w-2.5 h-2.5 text-amber-400 rotate-45 mr-1" />
@@ -1373,6 +1533,29 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                     </button>
                   )}
 
+                  {/* TTS Speech Button: Listen in native language */}
+                  {(msg.content || msg.voiceTranscript) && !isSticker && (
+                    <button
+                      onClick={() => handleToggleSpeakMessage(msg.content || msg.voiceTranscript || '', msg.id)}
+                      className={`p-1 rounded transition-colors ${
+                        speechState.isPlaying && speechState.messageId === msg.id
+                          ? 'text-emerald-400 bg-emerald-500/25 ring-1 ring-emerald-500/50'
+                          : 'hover:text-emerald-300 hover:bg-slate-800'
+                      }`}
+                      title={
+                        speechState.isPlaying && speechState.messageId === msg.id
+                          ? 'توقف گفتار صوتی'
+                          : 'شنیدن پیام با صدا به زبان اصلی (ضربه روی متن یا این دکمه)'
+                      }
+                    >
+                      {speechState.isPlaying && speechState.messageId === msg.id ? (
+                        <VolumeX className="w-3 h-3 text-emerald-400 animate-pulse" />
+                      ) : (
+                        <Volume2 className="w-3 h-3" />
+                      )}
+                    </button>
+                  )}
+
                   {/* Translation action button for text messages */}
                   {msg.content && msg.type !== 'voice' && !isSticker && (
                     <button
@@ -1447,6 +1630,34 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
         )}
         <div ref={messagesEndRef} />
       </div>
+
+      {/* Active Spoken Speech Bar (TTS / وضعیت پخش گفتار صوتی) */}
+      {speechState.isPlaying && (
+        <div className="bg-emerald-950/95 border-t border-emerald-500/40 px-3 py-1.5 flex items-center justify-between text-xs text-emerald-200 z-20 backdrop-blur animate-in slide-in-from-bottom-1 shadow-lg">
+          <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
+            <div className="p-1 rounded-lg bg-emerald-500/20 text-emerald-400 shrink-0">
+              <Volume2 className="w-3.5 h-3.5 animate-pulse" />
+            </div>
+            <div className="truncate text-[11px] flex-1">
+              <div className="font-bold text-emerald-300 flex items-center gap-1.5">
+                <span>در حال پخش صوتی پیام با زبان {speechState.langLabel || 'مربوطه'}</span>
+              </div>
+              <div className="text-emerald-100/90 truncate text-[10px] mt-0.5">
+                «{speechState.text}»
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={stopSpeech}
+            className="text-emerald-200 hover:text-white px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 transition-colors flex items-center gap-1 text-[11px] font-medium shrink-0 ml-2"
+            title="توقف خواندن صوتی"
+          >
+            <VolumeX className="w-3.5 h-3.5" />
+            <span>توقف صدا</span>
+          </button>
+        </div>
+      )}
 
       {/* Reply Preview Bar */}
       {replyTarget && (
