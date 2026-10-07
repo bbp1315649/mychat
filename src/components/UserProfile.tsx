@@ -631,8 +631,9 @@ export const UserProfile: React.FC<UserProfileProps> = ({
             </button>
           </div>
 
-          <div className="text-center text-[10px] text-slate-500 pt-2">
-            پیام‌رسان اختصاصی کادر آموزشی مدرسه • امنیت و حریم خصوصی محفوظ
+          <div className="text-center text-[10px] text-slate-500 pt-2 space-y-1">
+            <div>پیام‌رسان اختصاصی کادر آموزشی مدرسه • امنیت و حریم خصوصی محفوظ</div>
+            <div className="text-slate-400 font-medium text-[11px]">(  سازنده: بابک بهرامی پور )</div>
           </div>
         </div>
       )}

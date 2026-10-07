@@ -54,6 +54,10 @@ export const MobileFrame: React.FC<MobileFrameProps> = ({ children, onPhoneBack 
           </div>
         )}
         {children}
+        {/* Creator credit on mobile / full-screen */}
+        <footer className="py-1.5 bg-slate-950 border-t border-slate-900 text-center text-[11px] text-slate-400 font-medium select-text shrink-0">
+          (  سازنده: بابک بهرامی پور )
+        </footer>
       </div>
     );
   }
@@ -127,6 +131,11 @@ export const MobileFrame: React.FC<MobileFrameProps> = ({ children, onPhoneBack 
           </div>
         </div>
       </div>
+
+      {/* Creator Credit Footer */}
+      <footer className="mt-2.5 text-center text-xs text-slate-400 font-medium select-text tracking-wide">
+        (  سازنده: بابک بهرامی پور )
+      </footer>
     </div>
   );
 };

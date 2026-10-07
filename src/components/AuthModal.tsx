@@ -293,8 +293,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
       )}
 
       {/* Footer Info */}
-      <div className="mt-4 pt-3 border-t border-slate-800/60 text-center text-[10px] text-slate-500">
-        سامانه هوشمند ارتباطی مدرسه • طراحی اختصاصی صفحه موبایل
+      <div className="mt-4 pt-3 border-t border-slate-800/60 text-center text-[10px] text-slate-500 space-y-1">
+        <div>سامانه هوشمند ارتباطی مدرسه • طراحی اختصاصی صفحه موبایل</div>
+        <div className="text-slate-400 font-medium text-[11px]">(  سازنده: بابک بهرامی پور )</div>
       </div>
     </div>
   );
