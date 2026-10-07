@@ -632,29 +632,212 @@ export const api = {
     targetLang: string;
     engine?: string;
   }> {
-    if (isStaticHost) {
-      return {
-        success: true,
-        originalText: text,
-        translatedText: text,
-        sourceLang: sourceLang || 'fa',
-        targetLang,
-        engine: 'client-fallback',
-      };
+    const clean = text.trim();
+    if (!clean) {
+      return { success: true, originalText: '', translatedText: '', sourceLang: sourceLang || 'fa', targetLang };
     }
 
-    return safeFetchJson<{
-      success: boolean;
-      originalText: string;
-      translatedText: string;
-      sourceLang: string;
-      targetLang: string;
-      engine?: string;
-    }>(`${API_BASE}/translate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, targetLang, sourceLang }),
-    });
+    const resolvedSource = sourceLang || (/[\u0600-\u06FF]/.test(clean) ? 'fa' : 'en');
+    const resolvedTarget = targetLang || (resolvedSource === 'fa' ? 'en' : 'fa');
+
+    // 1. If running with active backend server, attempt /api/translate
+    if (!isStaticHost) {
+      try {
+        const data = await safeFetchJson<{
+          success: boolean;
+          originalText: string;
+          translatedText: string;
+          sourceLang: string;
+          targetLang: string;
+          engine?: string;
+        }>(`${API_BASE}/translate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: clean, targetLang: resolvedTarget, sourceLang: resolvedSource }),
+        }, 4000);
+        if (data && data.translatedText && data.translatedText.toLowerCase() !== clean.toLowerCase()) {
+          return data;
+        }
+      } catch {
+        // Fallback to client-side multi-engine translation
+      }
+    }
+
+    // 2. Client-side Engine 1: Google Translate GTX endpoint
+    try {
+      const gtxUrl = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${resolvedSource}&tl=${resolvedTarget}&dt=t&q=${encodeURIComponent(clean)}`;
+      const res = await fetch(gtxUrl, { signal: AbortSignal.timeout(4500) });
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json) && Array.isArray(json[0])) {
+          const trans = json[0].map((item: any) => item[0]).filter(Boolean).join('');
+          if (trans && trans.trim().toLowerCase() !== clean.toLowerCase()) {
+            return {
+              success: true,
+              originalText: clean,
+              translatedText: trans.trim(),
+              sourceLang: resolvedSource,
+              targetLang: resolvedTarget,
+              engine: 'google-gtx',
+            };
+          }
+        }
+      }
+    } catch {
+      // Continue to next engine
+    }
+
+    // 3. Client-side Engine 2: MyMemory Translation API (full open CORS)
+    try {
+      const langpair = `${resolvedSource}|${resolvedTarget}`;
+      const memoryUrl = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(clean)}&langpair=${langpair}`;
+      const res = await fetch(memoryUrl, { signal: AbortSignal.timeout(5000) });
+      if (res.ok) {
+        const json = await res.json();
+        let candidate = '';
+        if (json?.matches && Array.isArray(json.matches)) {
+          const best = json.matches.find((m: any) => m.quality >= 35 && !m.translation?.startsWith('['));
+          if (best?.translation) candidate = best.translation;
+        }
+        if (!candidate && json?.responseData?.translatedText) {
+          candidate = json.responseData.translatedText.replace(/\[.*?\]\s*/g, '');
+        }
+        if (candidate && candidate.trim().toLowerCase() !== clean.toLowerCase()) {
+          return {
+            success: true,
+            originalText: clean,
+            translatedText: candidate.trim(),
+            sourceLang: resolvedSource,
+            targetLang: resolvedTarget,
+            engine: 'mymemory',
+          };
+        }
+      }
+    } catch {
+      // Continue to dictionary fallback
+    }
+
+    // 4. Client-side Engine 3: Comprehensive Persian <-> English School & Daily Dictionary
+    const schoolDictFaToEn: Record<string, string> = {
+      'سلام': 'Hello',
+      'درود': 'Greetings',
+      'صبح بخیر': 'Good morning',
+      'عصر بخیر': 'Good afternoon',
+      'شب بخیر': 'Good night',
+      'خسته نباشید': 'Well done',
+      'خداقوت': 'Good job',
+      'همکاران گرامی': 'Dear colleagues',
+      'همکار گرامی': 'Dear colleague',
+      'با تشکر': 'Thank you',
+      'تشکر': 'Thank you',
+      'ممنون': 'Thanks',
+      'سپاسگزارم': 'Thank you very much',
+      'خداحافظ': 'Goodbye',
+      'موفق باشید': 'Good luck',
+      'مدیر': 'Principal',
+      'مدیر مدرسه': 'School Principal',
+      'معاون': 'Vice Principal',
+      'معاون آموزشی': 'Academic Deputy',
+      'معاون پرورشی': 'Disciplinary Deputy',
+      'معلم': 'Teacher',
+      'دبیر': 'High school teacher',
+      'آموزگار': 'Teacher',
+      'دانش‌آموز': 'Student',
+      'دانش آموز': 'Student',
+      'دانش‌آموزان': 'Students',
+      'دانش آموزان': 'Students',
+      'اولیا': 'Parents',
+      'کادر آموزشی': 'Educational staff',
+      'شورای معلمان': 'Teachers Council',
+      'جلسه': 'Meeting',
+      'جلسه شورا': 'Council meeting',
+      'مدرسه': 'School',
+      'آموزشگاه': 'School',
+      'کلاس': 'Class',
+      'کلاس درس': 'Classroom',
+      'امتحان': 'Exam',
+      'آزمون': 'Test',
+      'نمره': 'Grade',
+      'نمرات': 'Grades',
+      'کارنامه': 'Report card',
+      'تکلیف': 'Homework',
+      'تکالیف': 'Homework assignments',
+      'غیبت': 'Absence',
+      'حضور و غیاب': 'Attendance',
+      'حاضر': 'Present',
+      'غایب': 'Absent',
+      'لطفاً اطلاع دهید': 'Please inform',
+      'لطفاً بررسی فرمایید': 'Please review',
+      'جلسه فردا برگزار می‌شود': 'Tomorrow meeting will be held',
+      'بله': 'Yes',
+      'خیر': 'No',
+      'باشه': 'Okay',
+      'چشم': 'Understood / Sure',
+      'حتماً': 'Certainly',
+    };
+
+    const schoolDictEnToFa: Record<string, string> = {
+      'hello': 'سلام',
+      'hi': 'سلام',
+      'good morning': 'صبح بخیر',
+      'good afternoon': 'عصر بخیر',
+      'good night': 'شب بخیر',
+      'thank you': 'با تشکر',
+      'thanks': 'ممنون',
+      'goodbye': 'خداحافظ',
+      'good luck': 'موفق باشید',
+      'principal': 'مدیر مدرسه',
+      'teacher': 'معلم',
+      'teachers': 'معلمان',
+      'student': 'دانش‌آموز',
+      'students': 'دانش‌آموزان',
+      'parents': 'اولیا',
+      'school': 'مدرسه',
+      'class': 'کلاس',
+      'classroom': 'کلاس درس',
+      'exam': 'امتحان',
+      'test': 'آزمون',
+      'grades': 'نمرات',
+      'grade': 'نمره',
+      'homework': 'تکلیف',
+      'meeting': 'جلسه',
+      'yes': 'بله',
+      'no': 'خیر',
+      'ok': 'باشه',
+      'okay': 'باشه',
+    };
+
+    let dictMatch = '';
+    const norm = clean.toLowerCase();
+    if (resolvedTarget === 'en') {
+      dictMatch = schoolDictFaToEn[clean] || schoolDictFaToEn[clean.replace(/[\.\،\!\؟]/g, '')];
+      if (!dictMatch) {
+        // Simple word-by-word replacement
+        const words = clean.split(/\s+/);
+        const translatedWords = words.map(w => schoolDictFaToEn[w] || w);
+        if (translatedWords.some((w, i) => w !== words[i])) {
+          dictMatch = translatedWords.join(' ');
+        }
+      }
+    } else {
+      dictMatch = schoolDictEnToFa[norm] || schoolDictEnToFa[norm.replace(/[\.\,\!\?]/g, '')];
+      if (!dictMatch) {
+        const words = norm.split(/\s+/);
+        const translatedWords = words.map(w => schoolDictEnToFa[w] || w);
+        if (translatedWords.some((w, i) => w !== words[i])) {
+          dictMatch = translatedWords.join(' ');
+        }
+      }
+    }
+
+    return {
+      success: true,
+      originalText: clean,
+      translatedText: dictMatch || clean,
+      sourceLang: resolvedSource,
+      targetLang: resolvedTarget,
+      engine: 'dictionary-fallback',
+    };
   },
 };
 

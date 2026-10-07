@@ -619,27 +619,16 @@ export const UserProfile: React.FC<UserProfileProps> = ({
             </div>
           </div>
 
-          {/* Logout button with double-tap protection */}
+          {/* In-app Logout button */}
           <div className="space-y-1.5">
             <button
               type="button"
               onClick={onLogout}
-              className={`w-full py-3 rounded-2xl text-xs font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.99] border ${
-                logoutStep === 1
-                  ? 'bg-rose-600 hover:bg-rose-500 text-white border-rose-400 font-bold animate-pulse shadow-lg shadow-rose-600/30'
-                  : 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border-rose-500/30'
-              }`}
+              className="w-full py-3 rounded-2xl text-xs font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.99] border bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border-rose-500/30"
             >
-              <LogOut className={`w-4 h-4 ${logoutStep === 1 ? 'text-white' : 'text-rose-400'}`} />
-              <span>
-                {logoutStep === 1 ? 'تایید خروج از حساب (کلیک مجدد)' : 'خروج از حساب کاربری'}
-              </span>
+              <LogOut className="w-4 h-4 text-rose-400" />
+              <span>خروج از حساب کاربری</span>
             </button>
-            {logoutStep === 1 && (
-              <p className="text-[11px] text-rose-400 text-center font-medium animate-pulse">
-                جهت جلوگیری از خروج ناخواسته، لطفاً یک بار دیگر روی دکمه خروج کلیک کنید.
-              </p>
-            )}
           </div>
 
           <div className="text-center text-[10px] text-slate-500 pt-2">

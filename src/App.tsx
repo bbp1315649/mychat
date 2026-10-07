@@ -28,14 +28,7 @@ export default function App() {
   } | null>(null);
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
   const [loadingInitial, setLoadingInitial] = useState(true);
-  const [logoutStep, setLogoutStep] = useState<number>(0);
-  const [logoutNotice, setLogoutNotice] = useState<string | null>(null);
-  const logoutTimeoutRef = useRef<any>(null);
-
   // Phone hardware/browser back button handling (Double-tap to exit)
-  // "منظورم دکمه خروج برنامه نبود . دکمه خروج گوشی بود"
-  // "برای خروج تا دوبار پشت سرهم دکمه خروج زده نشه از صفحه برنامه خارج نشود"
-  const [isAppExited, setIsAppExited] = useState<boolean>(false);
   const [backExitPrompt, setBackExitPrompt] = useState<boolean>(false);
   const lastBackPressTimeRef = useRef<number>(0);
   const backExitTimerRef = useRef<any>(null);
@@ -84,18 +77,14 @@ export default function App() {
     const now = Date.now();
     const diff = now - lastBackPressTimeRef.current;
 
-    if (diff < 2500) {
-      // Second press in a row within 2.5s: allow exit!
+    if (diff < 2000) {
+      // Second press in a row within 2s: allow natural browser exit!
       if (backExitTimerRef.current) clearTimeout(backExitTimerRef.current);
       setBackExitPrompt(false);
       lastBackPressTimeRef.current = 0;
 
-      try {
-        window.close();
-      } catch (e) {
-        // ignore
-      }
-      setIsAppExited(true);
+      // Exit naturally by popping history
+      window.history.go(-2);
     } else {
       // First press: DO NOT EXIT! Re-push state and show prompt
       window.history.pushState({ app: 'school_messenger', step: 'root' }, '');
@@ -106,7 +95,7 @@ export default function App() {
       backExitTimerRef.current = setTimeout(() => {
         setBackExitPrompt(false);
         lastBackPressTimeRef.current = 0;
-      }, 2500);
+      }, 2000);
     }
   };
 
@@ -132,7 +121,6 @@ export default function App() {
       window.removeEventListener('popstate', onPopState);
       window.removeEventListener('keydown', onKeyDown);
       if (backExitTimerRef.current) clearTimeout(backExitTimerRef.current);
-      if (logoutTimeoutRef.current) clearTimeout(logoutTimeoutRef.current);
     };
   }, []);
 
@@ -359,30 +347,12 @@ export default function App() {
     setActiveChat(null);
   };
 
-  // Logout with double-tap protection
-  // Requirement: "برای خروج تا دوبار پشت سرهم دکمه خروج زده نشه از صفحه برنامه خارج نشود"
+  // In-app logout
   const handleLogout = () => {
-    if (logoutStep === 1) {
-      if (logoutTimeoutRef.current) {
-        clearTimeout(logoutTimeoutRef.current);
-        logoutTimeoutRef.current = null;
-      }
-      setLogoutStep(0);
-      setLogoutNotice(null);
+    if (window.confirm('آیا مایل به خروج از حساب کاربری خود هستید؟')) {
       setCurrentUser(null);
       localStorage.removeItem('school_chat_active_user');
       setActiveChat(null);
-    } else {
-      setLogoutStep(1);
-      setLogoutNotice('جهت خروج از سامانه، یک بار دیگر دکمه خروج را لمس کنید');
-      if (logoutTimeoutRef.current) {
-        clearTimeout(logoutTimeoutRef.current);
-      }
-      logoutTimeoutRef.current = setTimeout(() => {
-        setLogoutStep(0);
-        setLogoutNotice(null);
-        logoutTimeoutRef.current = null;
-      }, 3500);
     }
   };
 
@@ -485,34 +455,16 @@ export default function App() {
   // Calculate unread (demo count)
   const unreadCount = 2;
 
-  if (isAppExited) {
-    return (
-      <MobileFrame onPhoneBack={handlePhoneBack}>
-        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center select-none bg-slate-950">
-          <div className="w-16 h-16 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-400 flex items-center justify-center mb-4 shadow-lg">
-            <LogOut className="w-8 h-8" />
-          </div>
-          <h2 className="text-base font-bold text-slate-100 mb-1.5">از برنامه خارج شدید</h2>
-          <p className="text-xs text-slate-400 max-w-xs mb-6 leading-relaxed">
-            شما با دوبار فشردن دکمه بازگشت گوشی از محیط برنامه خارج شدید. برای بازگشت مجدد به برنامه، روی دکمه زیر کلیک کنید.
-          </p>
-          <button
-            onClick={() => {
-              setIsAppExited(false);
-              window.history.pushState({ app: 'school_messenger', step: 'root' }, '');
-            }}
-            className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow-lg transition-all active:scale-95 flex items-center gap-2"
-          >
-            <RotateCcw className="w-4 h-4" />
-            <span>ورود دوباره به برنامه</span>
-          </button>
-        </div>
-      </MobileFrame>
-    );
-  }
-
   return (
     <MobileFrame onPhoneBack={handlePhoneBack}>
+      {/* Hardware Back Button Exit Toast (Android Toast Style) */}
+      {backExitPrompt && (
+        <div className="fixed bottom-14 left-1/2 -translate-x-1/2 z-[9999] px-4 py-2.5 bg-slate-900/95 border border-slate-700/90 text-white text-xs font-semibold rounded-full shadow-2xl flex items-center gap-2.5 backdrop-blur-md animate-in fade-in zoom-in-95 slide-in-from-bottom-2 duration-150 pointer-events-none ring-1 ring-white/10">
+          <div className="w-2 h-2 rounded-full bg-amber-400 animate-ping shrink-0" />
+          <span>برای خروج از برنامه، یک بار دیگر دکمه برگشت را بزنید</span>
+        </div>
+      )}
+
       {loadingInitial ? (
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-slate-300">
           <div className="w-14 h-14 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400 mb-3 animate-pulse">
@@ -528,22 +480,6 @@ export default function App() {
         <AuthModal onSuccess={handleAuthSuccess} />
       ) : (
         <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-          {/* Double-tap Logout Confirmation Toast */}
-          {logoutNotice && (
-            <div className="fixed top-12 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-rose-950/95 border border-rose-500/80 text-rose-200 text-xs font-bold rounded-2xl shadow-2xl flex items-center gap-2 backdrop-blur-md animate-in fade-in slide-in-from-top-3 duration-200 pointer-events-none">
-              <div className="w-2 h-2 rounded-full bg-rose-400 animate-ping shrink-0" />
-              <span>{logoutNotice}</span>
-            </div>
-          )}
-
-          {/* Double-tap Hardware Back Button Exit Toast (Android Toast Style) */}
-          {backExitPrompt && (
-            <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 bg-slate-900/95 border border-slate-700/90 text-white text-xs font-semibold rounded-full shadow-2xl flex items-center gap-2.5 backdrop-blur-md animate-in fade-in zoom-in-95 slide-in-from-bottom-2 duration-150 pointer-events-none ring-1 ring-white/10">
-              <div className="w-2 h-2 rounded-full bg-amber-400 animate-ping shrink-0" />
-              <span>برای خروج از برنامه، یک بار دیگر دکمه بازگشت را بزنید</span>
-            </div>
-          )}
-
           {/* Top Info Bar */}
           <div className="bg-slate-900/95 border-b border-slate-800 px-3 py-1.5 flex items-center justify-between text-[11px] shrink-0">
             <div className="flex items-center gap-1.5 text-slate-300">
@@ -562,22 +498,13 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-2">
-              {logoutStep === 1 && (
-                <span className="text-[10px] text-rose-300 font-semibold animate-pulse hidden sm:inline-block">
-                  برای خروج دوباره کلیک کنید
-                </span>
-              )}
               <button
                 onClick={handleLogout}
-                className={`text-[11px] flex items-center gap-1.5 px-2.5 py-1 rounded-lg border transition-all ${
-                  logoutStep === 1
-                    ? 'bg-rose-600 hover:bg-rose-500 text-white border-rose-400 font-bold animate-pulse shadow-md shadow-rose-600/30'
-                    : 'text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border-rose-500/30'
-                }`}
-                title={logoutStep === 1 ? 'تایید خروج (کلیک مجدد)' : 'خروج از حساب کاربری فعلی'}
+                className="text-[11px] flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-rose-400 hover:text-rose-300 bg-rose-500/10 hover:bg-rose-500/20 border-rose-500/30 transition-all active:scale-95"
+                title="خروج از حساب کاربری"
               >
-                <LogOut className={`w-3 h-3 ${logoutStep === 1 ? 'text-white' : 'text-rose-400'}`} />
-                <span>{logoutStep === 1 ? 'تایید خروج (کلیک مجدد)' : 'خروج'}</span>
+                <LogOut className="w-3 h-3 text-rose-400" />
+                <span>خروج</span>
               </button>
             </div>
           </div>
@@ -670,7 +597,6 @@ export default function App() {
                   <UserProfile
                     currentUser={currentUser}
                     onLogout={handleLogout}
-                    logoutStep={logoutStep}
                     onProfileUpdated={(updated) => {
                       setCurrentUser(updated);
                       setUsers(prev => prev.map(u => u.id === updated.id ? updated : u));
