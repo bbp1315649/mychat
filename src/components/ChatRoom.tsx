@@ -42,12 +42,14 @@ import {
   Pencil,
   Minimize2,
   VolumeX,
-  Gauge
+  Gauge,
+  Square
 } from 'lucide-react';
 import { CameraCaptureModal } from './CameraCaptureModal';
 import { ImageLightboxModal } from './ImageLightboxModal';
 import { VoiceMessagePlayer } from './VoiceMessagePlayer';
 import { SpeechSpeedModal } from './SpeechSpeedModal';
+import { HighlightedSpokenText } from './HighlightedSpokenText';
 import { 
   startAudioRecording, 
   ActiveRecorder, 
@@ -65,7 +67,8 @@ import {
   subscribeSpeechState,
   detectLanguage,
   SpeechPlaybackState,
-  getSpeechRate
+  getSpeechRate,
+  getCurrentSpeechState
 } from '../utils/textToSpeech';
 
 interface ChatRoomProps {
@@ -307,16 +310,8 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
     clearTimeout(longPressTimerRef.current);
   };
 
-  // Text-To-Speech (TTS / تبدیل متن پیام به گفتار صوتی با همان زبان و قابلیت تنظیم سرعت)
-  // Requirement: "یک قسمت تنظیم سرعت گفتار هم ایجاد بشه . چون الان سرعت کمی زیاد است"
-  const [speechState, setSpeechState] = useState<SpeechPlaybackState>({
-    isPlaying: false,
-    messageId: null,
-    text: '',
-    lang: '',
-    langLabel: '',
-    rate: getSpeechRate(),
-  });
+  // Text-To-Speech (TTS / تبدیل متن پیام به گفتار صوتی با همان زبان، هایلایت کارائوکه و قابلیت تنظیم سرعت)
+  const [speechState, setSpeechState] = useState<SpeechPlaybackState>(getCurrentSpeechState());
   const [showSpeechSpeedModal, setShowSpeechSpeedModal] = useState<boolean>(false);
 
   useEffect(() => {
@@ -1119,6 +1114,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                     const textToCopy = msg.content || msg.voiceTranscript || '';
                     if (textToCopy) handleStartLongPress(textToCopy, msg.id);
                   }}
+                  onTouchMove={handleCancelLongPress}
                   onTouchEnd={handleCancelLongPress}
                   onTouchCancel={handleCancelLongPress}
                   onContextMenu={(e) => {
@@ -1190,21 +1186,42 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                               ? 'border-emerald-400 ring-1 ring-emerald-400/60'
                               : 'border-white/10 hover:border-emerald-500/30'
                           }`}
-                          title="ضربه برای شنیدن متن پیاده‌شده با صدا"
+                          title="ضربه برای شنیدن متن پیاده‌شده با صدا و مشاهده هایلایت کلمه‌به‌کلمه"
                         >
-                          <div className="flex items-center justify-between text-[10px] text-slate-300 mb-1">
+                          <div className="flex items-center justify-between text-[10px] text-slate-300 mb-1 select-none">
                             <span className="flex items-center gap-1 text-emerald-300 font-bold">
                               <Sparkles className="w-3 h-3 text-emerald-400" />
                               <span>متن گفتار صوتی:</span>
                             </span>
                             <div className="flex items-center gap-1 text-[9px] text-emerald-300">
                               <Volume2 className={`w-3.5 h-3.5 ${speechState.isPlaying && speechState.messageId === `${msg.id}_transcript` ? 'text-emerald-400 animate-pulse' : 'text-slate-400'}`} />
-                              <span>ضربه برای شنیدن</span>
+                              <span>ضربه برای شنیدن با هایلایت</span>
                             </div>
                           </div>
                           <p className="whitespace-pre-wrap leading-relaxed select-text font-medium text-slate-100 text-[11px]">
-                            {msg.voiceTranscript}
+                            <HighlightedSpokenText
+                              text={msg.voiceTranscript!}
+                              isPlaying={speechState.isPlaying && speechState.messageId === `${msg.id}_transcript`}
+                              activeWordIndex={speechState.currentWordIndex}
+                            />
                           </p>
+                          {speechState.isPlaying && speechState.messageId === `${msg.id}_transcript` && (
+                            <div className="mt-2 pt-1 border-t border-white/20 flex items-center justify-between gap-1 text-[10px] text-emerald-300 font-medium select-none">
+                              <span className="truncate">
+                                در حال خواندن: <strong className="text-amber-300 font-bold bg-amber-400/20 px-1 py-0.5 rounded">{speechState.currentWord || '...'}</strong>
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  stopSpeech();
+                                }}
+                                className="text-[9px] bg-rose-500/20 text-rose-300 px-1.5 py-0.2 rounded border border-rose-500/30"
+                              >
+                                توقف
+                              </button>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1324,7 +1341,7 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                             handleToggleSpeakMessage(msg.content, msg.id);
                           }}
                           className="cursor-pointer group/text relative select-text"
-                          title="برای شنیدن با صدا (به همان زبان پیام) روی متن بزنید"
+                          title="برای شنیدن با صدا (به همان زبان پیام) و مشاهده هایلایت کلمه‌به‌کلمه روی متن بزنید"
                         >
                           <p
                             dir={msg.isVoiceTranslated ? 'ltr' : 'auto'}
@@ -1332,25 +1349,36 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                               isMedia ? 'px-1.5 pt-1.5 pb-0.5' : ''
                             } ${
                               msg.isVoiceTranslated ? 'font-sans tracking-wide text-slate-100' : ''
-                            } ${
-                              speechState.isPlaying && speechState.messageId === msg.id
-                                ? 'text-emerald-200 font-medium'
-                                : ''
                             }`}
                           >
-                            {msg.content}
+                            <HighlightedSpokenText
+                              text={msg.content}
+                              isPlaying={speechState.isPlaying && speechState.messageId === msg.id}
+                              activeWordIndex={speechState.currentWordIndex}
+                            />
                           </p>
 
-                          {/* Active Speaking Indicator on the message */}
+                          {/* Active Speaking Indicator on the message with Karaoke Word Highlight */}
                           {speechState.isPlaying && speechState.messageId === msg.id && (
-                            <div className="mt-1.5 pt-1 border-t border-white/20 flex items-center justify-between gap-1 text-[10px] text-emerald-300 font-medium select-none animate-fadeIn">
-                              <span className="flex items-center gap-1">
+                            <div className="mt-2 pt-1.5 border-t border-white/20 flex items-center justify-between gap-1.5 text-[11px] text-emerald-300 font-medium select-none animate-fadeIn bg-black/25 px-2 py-1.5 rounded-xl">
+                              <span className="flex items-center gap-1.5 truncate">
                                 <Volume2 className="w-3.5 h-3.5 text-emerald-400 animate-pulse shrink-0" />
-                                <span>در حال پخش صدا با زبان {speechState.langLabel || 'پیام'}...</span>
+                                <span className="truncate">
+                                  در حال خواندن: <strong className="text-amber-300 font-bold bg-amber-400/20 px-1 py-0.5 rounded text-xs">{speechState.currentWord || '...'}</strong>
+                                </span>
                               </span>
-                              <span className="text-[9px] bg-emerald-500/25 px-1.5 py-0.2 rounded text-emerald-200 border border-emerald-400/40 shrink-0">
-                                توقف
-                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  stopSpeech();
+                                }}
+                                className="text-[10px] bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 px-2 py-0.5 rounded-md flex items-center gap-1 shrink-0 transition-colors"
+                                title="توقف خوانش صدا"
+                              >
+                                <Square className="w-2.5 h-2.5 fill-current" />
+                                <span>توقف</span>
+                              </button>
                             </div>
                           )}
                         </div>
@@ -1422,12 +1450,28 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                         </div>
                       </div>
                       <div className="font-sans text-[11px] leading-relaxed select-text font-normal text-slate-100">
-                        {messageTranslations[msg.id].translated}
+                        <HighlightedSpokenText
+                          text={messageTranslations[msg.id].translated}
+                          isPlaying={speechState.isPlaying && speechState.messageId === `${msg.id}_trans`}
+                          activeWordIndex={speechState.currentWordIndex}
+                        />
                       </div>
                       {speechState.isPlaying && speechState.messageId === `${msg.id}_trans` && (
-                        <div className="mt-1 text-[9px] text-emerald-300 flex items-center gap-1">
-                          <Volume2 className="w-3 h-3 animate-pulse" />
-                          <span>در حال خواندن ترجمه با صدای {speechState.langLabel || 'انگلیسی'}...</span>
+                        <div className="mt-1 text-[9px] text-emerald-300 flex items-center justify-between gap-1 select-none">
+                          <span className="flex items-center gap-1">
+                            <Volume2 className="w-3 h-3 animate-pulse" />
+                            <span>در حال خواندن: <strong className="text-amber-300">{speechState.currentWord || '...'}</strong></span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              stopSpeech();
+                            }}
+                            className="text-[9px] bg-rose-500/20 text-rose-300 px-1 py-0.2 rounded"
+                          >
+                            توقف
+                          </button>
                         </div>
                       )}
                     </div>
@@ -1443,21 +1487,27 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                     {msg.content && msg.type !== 'voice' && !isSticker && (
                       <button
                         type="button"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onTouchStart={(e) => e.stopPropagation()}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleToggleSpeakMessage(msg.content, msg.id);
                         }}
-                        className={`p-0.5 rounded hover:bg-white/10 transition-colors ${
+                        className={`p-1 rounded-lg hover:bg-white/10 transition-colors flex items-center justify-center ${
                           speechState.isPlaying && speechState.messageId === msg.id
-                            ? 'text-emerald-300 animate-pulse'
-                            : 'opacity-60 hover:opacity-100'
+                            ? 'text-rose-300 bg-rose-500/20 ring-1 ring-rose-500/40'
+                            : 'opacity-70 hover:opacity-100 hover:text-emerald-300'
                         }`}
-                        title="پخش صوتی متن پیام به همان زبان"
+                        title={
+                          speechState.isPlaying && speechState.messageId === msg.id
+                            ? 'توقف گفتار صوتی'
+                            : 'پخش صوتی متن پیام به همان زبان با هایلایت کلمه‌به‌کلمه'
+                        }
                       >
                         {speechState.isPlaying && speechState.messageId === msg.id ? (
-                          <VolumeX className="w-2.5 h-2.5 text-emerald-300" />
+                          <VolumeX className="w-3 h-3 text-rose-300" />
                         ) : (
-                          <Volume2 className="w-2.5 h-2.5" />
+                          <Volume2 className="w-3 h-3" />
                         )}
                       </button>
                     )}

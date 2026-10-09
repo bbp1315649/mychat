@@ -778,8 +778,13 @@ app.post('/api/translate', async (req, res) => {
   }
 });
 
-// In-memory cache for synthesized speech to provide instant response
-const ttsAudioCache = new Map<string, { buffer: Buffer; timestamp: number }>();
+interface CachedTTS {
+  buffer: Buffer;
+  wordBoundaries: Array<{ text: string; start: number; end: number }>;
+  duration: number;
+  timestamp: number;
+}
+const ttsAudioCache = new Map<string, CachedTTS>();
 
 function getVoiceForLang(langCode: string): { voice: string; locale: string } {
   const code = (langCode || 'fa').toLowerCase();
@@ -805,24 +810,26 @@ function getVoiceForLang(langCode: string): { voice: string; locale: string } {
   return { voice: 'fa-IR-DilaraNeural', locale: 'fa-IR' };
 }
 
-// 14. Text-To-Speech (TTS / تبدیل هوشمند و طبیعی متن به گفتار با پشتیبانی کامل از زبان فارسی)
-app.get(['/api/tts', '/api/speech'], async (req, res) => {
+// 14. Text-To-Speech (TTS / تبدیل هوشمند متن به گفتار با صدای طبیعی فارسی، زمان‌بندی کلمات و هایلایت کارائوکه)
+app.all(['/api/tts', '/api/speech'], async (req, res) => {
   try {
-    const text = (req.query.text || req.body?.text) as string;
-    const lang = (req.query.lang || req.body?.lang || 'fa') as string;
-    const rateParam = req.query.rate as string;
+    const text = ((req.method === 'POST' ? req.body?.text : req.query.text) || req.body?.text || req.query.text) as string;
+    const lang = ((req.method === 'POST' ? req.body?.lang : req.query.lang) || req.body?.lang || req.query.lang || 'fa') as string;
+    const rateParam = (req.method === 'POST' ? req.body?.rate : req.query.rate) as string | number | undefined;
+    const format = ((req.method === 'POST' ? req.body?.format : req.query.format) || (req.headers.accept?.includes('application/json') ? 'json' : 'audio')) as string;
 
     if (!text || typeof text !== 'string' || !text.trim()) {
       return res.status(400).json({ error: 'متن برای تبدیل به گفتار الزامی است' });
     }
 
-    const cleanText = text.trim().slice(0, 500);
+    // Sanitize text and limit length
+    const cleanText = text.trim().slice(0, 600);
     const { voice, locale } = getVoiceForLang(lang);
 
-    // Calculate rate string if requested
+    // Calculate rate string if requested (e.g. '+0%', '-15%', '+10%')
     let rateStr = '+0%';
-    if (rateParam) {
-      const parsedRate = parseFloat(rateParam);
+    if (rateParam !== undefined && rateParam !== null) {
+      const parsedRate = typeof rateParam === 'number' ? rateParam : parseFloat(rateParam);
       if (!isNaN(parsedRate) && parsedRate >= 0.5 && parsedRate <= 2.0) {
         const percent = Math.round((parsedRate - 1.0) * 100);
         rateStr = `${percent >= 0 ? '+' : ''}${percent}%`;
@@ -830,46 +837,57 @@ app.get(['/api/tts', '/api/speech'], async (req, res) => {
     }
 
     const cacheKey = `${voice}:${rateStr}:${cleanText}`;
-    const cached = ttsAudioCache.get(cacheKey);
-    if (cached && (Date.now() - cached.timestamp < 3600_000 * 24)) {
-      res.setHeader('Content-Type', 'audio/mpeg');
-      res.setHeader('Cache-Control', 'public, max-age=86400');
-      return res.send(cached.buffer);
-    }
+    let cached = ttsAudioCache.get(cacheKey);
 
-    // 1. Primary Engine: Neural Edge TTS (Fully supports Persian / fa-IR-DilaraNeural)
-    try {
-      // @ts-ignore
-      const edgeMod: any = await import('@andresaya/edge-tts');
-      const EdgeTTSClass: any = edgeMod.EdgeTTS || edgeMod.default?.EdgeTTS || edgeMod.default;
-      const tts: any = new EdgeTTSClass({
-        voice,
-        lang: locale,
-        rate: rateStr,
-        outputFormat: 'audio-24khz-48kbitrate-mono-mp3'
-      });
+    let buffer: Buffer | null = cached?.buffer || null;
+    let wordBoundaries: Array<{ text: string; start: number; end: number }> = cached?.wordBoundaries || [];
+    let duration: number = cached?.duration || 0;
 
-      await tts.synthesize(cleanText, voice, { rate: rateStr });
-      const buffer = await tts.toBuffer();
+    if (!buffer) {
+      // 1. Primary Engine: Neural Edge TTS (Fully supports Persian / fa-IR-DilaraNeural with exact word boundaries)
+      try {
+        // @ts-ignore
+        const edgeMod: any = await import('@andresaya/edge-tts');
+        const EdgeTTSClass: any = edgeMod.EdgeTTS || edgeMod.default?.EdgeTTS || edgeMod.default;
+        const tts: any = new EdgeTTSClass({
+          voice,
+          lang: locale,
+          rate: rateStr,
+          outputFormat: 'audio-24khz-48kbitrate-mono-mp3'
+        });
 
-      if (buffer && buffer.length > 0) {
-        // Keep cache manageable
-        if (ttsAudioCache.size > 250) {
-          const firstKey = ttsAudioCache.keys().next().value;
-          if (firstKey) ttsAudioCache.delete(firstKey);
+        await tts.synthesize(cleanText, voice, { rate: rateStr });
+        const generatedBuffer: Buffer = await tts.toBuffer();
+
+        if (generatedBuffer && generatedBuffer.length > 0) {
+          buffer = generatedBuffer;
+          const rawBoundaries = typeof tts.getWordBoundaries === 'function' ? tts.getWordBoundaries() : [];
+          wordBoundaries = (rawBoundaries || []).map((b: any) => ({
+            text: b.text || '',
+            start: Math.round(((b.offset || 0) / 10_000_000) * 1000) / 1000,
+            end: Math.round((((b.offset || 0) + (b.duration || 0)) / 10_000_000) * 1000) / 1000,
+          }));
+
+          if (wordBoundaries.length > 0) {
+            duration = wordBoundaries[wordBoundaries.length - 1].end;
+          } else {
+            duration = Math.round((generatedBuffer.length / (24000 * 3)) * 10) / 10;
+          }
+
+          // Keep cache size bounded
+          if (ttsAudioCache.size > 300) {
+            const firstKey = ttsAudioCache.keys().next().value;
+            if (firstKey) ttsAudioCache.delete(firstKey);
+          }
+          ttsAudioCache.set(cacheKey, { buffer: generatedBuffer, wordBoundaries, duration, timestamp: Date.now() });
         }
-        ttsAudioCache.set(cacheKey, { buffer, timestamp: Date.now() });
-
-        res.setHeader('Content-Type', 'audio/mpeg');
-        res.setHeader('Cache-Control', 'public, max-age=86400');
-        return res.send(buffer);
+      } catch (edgeErr: any) {
+        console.warn('EdgeTTS synthesis error, attempting fallback:', edgeErr?.message || edgeErr);
       }
-    } catch (edgeErr: any) {
-      console.warn('EdgeTTS synthesis error, attempting fallback:', edgeErr?.message || edgeErr);
     }
 
     // 2. Secondary Engine: Google Translate TTS fallback for non-Persian languages
-    if (!lang.startsWith('fa')) {
+    if (!buffer && !lang.startsWith('fa')) {
       const langCode = lang.startsWith('en') ? 'en' : lang.startsWith('ar') ? 'ar' : lang.slice(0, 2);
       const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(cleanText.slice(0, 200))}&tl=${langCode}&client=tw-ob`;
       const fallbackRes = await fetch(ttsUrl, {
@@ -882,12 +900,51 @@ app.get(['/api/tts', '/api/speech'], async (req, res) => {
 
       if (fallbackRes.ok && fallbackRes.body) {
         const arr = await fallbackRes.arrayBuffer();
-        res.setHeader('Content-Type', 'audio/mpeg');
-        return res.send(Buffer.from(arr));
+        buffer = Buffer.from(arr);
+        duration = 3.0;
       }
     }
 
-    res.status(502).json({ error: 'امکان تولید گفتار صوتی در حال حاضر میسر نشد' });
+    if (!buffer || buffer.length === 0) {
+      return res.status(502).json({ error: 'امکان تولید گفتار صوتی در حال حاضر میسر نشد' });
+    }
+
+    // If client requested JSON with base64 audio and word boundaries for karaoke display
+    if (format === 'json') {
+      return res.json({
+        success: true,
+        audioUrl: `data:audio/mp3;base64,${buffer.toString('base64')}`,
+        wordBoundaries,
+        duration,
+        text: cleanText,
+        lang,
+      });
+    }
+
+    // Serve raw audio with full range support (iOS Safari & mobile compatible)
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+
+    const range = req.headers.range;
+    if (range) {
+      const parts = range.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : buffer.length - 1;
+      if (start >= buffer.length || end >= buffer.length) {
+        res.setHeader('Content-Range', `bytes */${buffer.length}`);
+        return res.status(416).end();
+      }
+      const chunk = buffer.subarray(start, end + 1);
+      res.writeHead(206, {
+        'Content-Range': `bytes ${start}-${end}/${buffer.length}`,
+        'Content-Length': chunk.length,
+      });
+      return res.end(chunk);
+    }
+
+    res.setHeader('Content-Length', buffer.length.toString());
+    return res.send(buffer);
   } catch (err: any) {
     console.error('TTS endpoint error:', err);
     res.status(500).json({ error: 'خطای سرور در تبدیل متن به گفتار' });

@@ -18,11 +18,14 @@ import {
   stopSpeech,
   subscribeSpeechState
 } from '../utils/textToSpeech';
+import { HighlightedSpokenText } from './HighlightedSpokenText';
 
 interface SpeechSpeedModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
+
+const SAMPLE_PHRASE = 'این یک نمونه صوتی از سرعت گفتار تنظیم‌شده است.';
 
 export const SpeechSpeedModal: React.FC<SpeechSpeedModalProps> = ({
   isOpen,
@@ -30,6 +33,7 @@ export const SpeechSpeedModal: React.FC<SpeechSpeedModalProps> = ({
 }) => {
   const [currentRate, setCurrentRateState] = useState<number>(getSpeechRate());
   const [isPlayingTest, setIsPlayingTest] = useState(false);
+  const [activeWordIndex, setActiveWordIndex] = useState<number>(-1);
 
   useEffect(() => {
     if (isOpen) {
@@ -39,7 +43,9 @@ export const SpeechSpeedModal: React.FC<SpeechSpeedModalProps> = ({
 
   useEffect(() => {
     const unsub = subscribeSpeechState((state) => {
-      setIsPlayingTest(state.isPlaying && state.messageId === 'sample_test_tts');
+      const isTest = state.isPlaying && state.messageId === 'sample_test_tts';
+      setIsPlayingTest(isTest);
+      setActiveWordIndex(isTest ? state.currentWordIndex : -1);
       setCurrentRateState(state.rate || getSpeechRate());
     });
     return unsub;
@@ -181,8 +187,25 @@ export const SpeechSpeedModal: React.FC<SpeechSpeedModalProps> = ({
             </div>
           </div>
 
+          {/* Live Karaoke Preview Box in Modal */}
+          <div className={`p-3 rounded-2xl border text-center transition-all ${
+            isPlayingTest ? 'bg-black/50 border-amber-500/50 ring-1 ring-amber-500/30' : 'bg-slate-800/40 border-slate-800'
+          }`}>
+            <div className="text-[10px] text-slate-400 mb-1.5 flex items-center justify-center gap-1">
+              <Sparkles className="w-3 h-3 text-amber-400" />
+              <span>پیش‌نمایش هایلایت کلمه‌به‌کلمه همزمان با خواندن:</span>
+            </div>
+            <p className="text-xs font-medium leading-relaxed select-none">
+              <HighlightedSpokenText
+                text={SAMPLE_PHRASE}
+                isPlaying={isPlayingTest}
+                activeWordIndex={activeWordIndex}
+              />
+            </p>
+          </div>
+
           {/* Test Speech Button */}
-          <div className="pt-1">
+          <div className="pt-0.5">
             <button
               type="button"
               onClick={handleTestAudio}
@@ -200,7 +223,7 @@ export const SpeechSpeedModal: React.FC<SpeechSpeedModalProps> = ({
               ) : (
                 <>
                   <Volume2 className="w-4 h-4 text-emerald-400" />
-                  <span>تست سرعت گفتار (پخش نمونه)</span>
+                  <span>تست سرعت گفتار (پخش نمونه با هایلایت)</span>
                 </>
               )}
             </button>

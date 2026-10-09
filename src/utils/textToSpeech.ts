@@ -1,10 +1,18 @@
 /**
  * Text-to-Speech (TTS) Utility for School Chat
- * Supports automatic language detection (Persian, English, Arabic, etc.),
- * multi-engine synthesis (Server-side natural audio + Web Speech API fallback),
- * speech rate/speed customization (defaults to comfortable 0.85x),
- * and clean state management.
+ * Features:
+ * - High-quality Persian (DilaraNeural) & multi-language voice synthesis
+ * - Millisecond-accurate word boundaries for real-time word-by-word (Karaoke) highlighting
+ * - Real-time speech rate adjustment (0.7x to 1.2x)
+ * - Safe session management with zero ghost playback or cancellation bugs
+ * - Fallback with boundary events when offline
  */
+
+export interface WordTiming {
+  text: string;
+  start: number; // in seconds
+  end: number;   // in seconds
+}
 
 export interface SpeechPlaybackState {
   isPlaying: boolean;
@@ -13,6 +21,12 @@ export interface SpeechPlaybackState {
   lang: string;
   langLabel: string;
   rate: number;
+  currentWordIndex: number;
+  currentWord: string;
+  words: string[];
+  wordBoundaries: WordTiming[];
+  currentTime: number;
+  duration: number;
 }
 
 export interface SpeechRatePreset {
@@ -46,14 +60,17 @@ export function getSpeechRate(): number {
       }
     }
   } catch {
-    // ignore localStorage errors
+    // ignore
   }
   return DEFAULT_SPEECH_RATE;
 }
 
-// Global active audio instance for HTML5 Audio playback
+// Global active audio & session tracking
 let currentAudio: HTMLAudioElement | null = null;
 let currentUtterance: SpeechSynthesisUtterance | null = null;
+let activeSessionId = 0;
+let syncTickerId: any = null;
+let userStopped = false;
 let stateChangeListeners: Set<(state: SpeechPlaybackState) => void> = new Set();
 
 let currentState: SpeechPlaybackState = {
@@ -63,11 +80,17 @@ let currentState: SpeechPlaybackState = {
   lang: '',
   langLabel: '',
   rate: getSpeechRate(),
+  currentWordIndex: -1,
+  currentWord: '',
+  words: [],
+  wordBoundaries: [],
+  currentTime: 0,
+  duration: 0,
 };
 
 function notifyState(partial: Partial<SpeechPlaybackState>) {
   currentState = { ...currentState, ...partial };
-  stateChangeListeners.forEach(listener => {
+  stateChangeListeners.forEach((listener) => {
     try {
       listener(currentState);
     } catch (e) {
@@ -114,6 +137,14 @@ export function getCurrentSpeechState(): SpeechPlaybackState {
 }
 
 /**
+ * Split text into individual speech words for highlight rendering
+ */
+export function extractSpeechWords(text: string): string[] {
+  if (!text) return [];
+  return text.trim().split(/\s+/).filter(Boolean);
+}
+
+/**
  * Detect language of a given text string.
  * Accurately recognizes Persian (Farsi), Arabic, and English / Latin.
  */
@@ -148,7 +179,6 @@ export function detectLanguage(text: string): {
 
   // Persian vs Arabic
   if (hasDistinctPersian || arabicPersianChars > 0) {
-    // Check if Persian
     return { lang: 'fa-IR', shortLang: 'fa', label: 'فارسی', isRtl: true };
   }
 
@@ -160,11 +190,23 @@ export function detectLanguage(text: string): {
  * Stop any current audio or speech synthesis immediately
  */
 export function stopSpeech(): void {
+  userStopped = true;
+  activeSessionId++;
+
+  if (syncTickerId) {
+    cancelAnimationFrame(syncTickerId);
+    clearInterval(syncTickerId);
+    syncTickerId = null;
+  }
+
   // Stop HTML5 Audio
   if (currentAudio) {
     try {
       currentAudio.pause();
-      currentAudio.currentTime = 0;
+      currentAudio.onplaying = null;
+      currentAudio.onended = null;
+      currentAudio.onerror = null;
+      currentAudio.ontimeupdate = null;
       currentAudio.src = '';
     } catch {
       // ignore
@@ -188,11 +230,17 @@ export function stopSpeech(): void {
     text: '',
     lang: '',
     langLabel: '',
+    currentWordIndex: -1,
+    currentWord: '',
+    words: [],
+    wordBoundaries: [],
+    currentTime: 0,
+    duration: 0,
   });
 }
 
 /**
- * Speak text in its native language.
+ * Speak text in its native language with real-time word-by-word tracking.
  * Tapping once plays; if already playing the same message, stops playback.
  */
 export async function speakMessageText(
@@ -216,11 +264,14 @@ export async function speakMessageText(
 
   // Stop any other active playback first
   stopSpeech();
+  userStopped = false;
 
+  const sessionId = ++activeSessionId;
   const detected = detectLanguage(clean);
   const targetLang = options?.forceLang || detected.lang;
   const shortLang = detected.shortLang;
   const activeRate = getSpeechRate();
+  const words = extractSpeechWords(clean);
 
   notifyState({
     isPlaying: true,
@@ -229,12 +280,18 @@ export async function speakMessageText(
     lang: targetLang,
     langLabel: detected.label,
     rate: activeRate,
+    currentWordIndex: 0,
+    currentWord: words[0] || '',
+    words,
+    wordBoundaries: [],
+    currentTime: 0,
+    duration: 0,
   });
 
   options?.onStart?.();
 
   // Try 1: High quality server audio endpoint (/api/tts)
-  // Provides natural human-like pronunciation for Persian and English
+  // Provides natural human-like pronunciation for Persian and English with exact word boundaries
   try {
     const isStaticHost = typeof window !== 'undefined' && (
       window.location.hostname.endsWith('github.io') ||
@@ -243,76 +300,147 @@ export async function speakMessageText(
     );
 
     if (!isStaticHost) {
-      const audioUrl = `/api/tts?text=${encodeURIComponent(clean.slice(0, 450))}&lang=${encodeURIComponent(shortLang)}`;
-      const audio = new Audio();
-      audio.preload = 'auto';
-      audio.src = audioUrl;
-      currentAudio = audio;
+      // Request synthesized speech with word boundaries metadata
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({
+          text: clean.slice(0, 500),
+          lang: shortLang,
+          rate: activeRate,
+          format: 'json',
+        }),
+      });
 
-      // Apply active speech speed rate
-      try {
-        audio.playbackRate = activeRate;
-      } catch {
-        // ignore
+      if (sessionId !== activeSessionId || userStopped) {
+        return false;
       }
 
-      audio.oncanplay = () => {
-        try {
-          audio.playbackRate = getSpeechRate();
-        } catch {
-          // ignore
-        }
-      };
+      if (res.ok) {
+        const data = await res.json();
+        if (data.audioUrl) {
+          const boundaries: WordTiming[] = data.wordBoundaries || [];
+          const audioDuration: number = data.duration || 0;
 
-      const playPromise = new Promise<boolean>((resolve, reject) => {
-        let isDone = false;
-        let timeoutId: any = null;
+          notifyState({
+            wordBoundaries: boundaries,
+            duration: audioDuration,
+          });
 
-        const finish = (ok: boolean) => {
-          if (isDone) return;
-          isDone = true;
-          if (timeoutId) clearTimeout(timeoutId);
-          if (currentAudio === audio) {
-            currentAudio = null;
-            notifyState({ isPlaying: false, messageId: null, text: '' });
-            if (ok) options?.onEnd?.();
-          }
-          resolve(ok);
-        };
+          const audio = new Audio();
+          audio.preload = 'auto';
+          audio.src = data.audioUrl;
+          currentAudio = audio;
 
-        audio.onplaying = () => {
-          if (timeoutId) clearTimeout(timeoutId);
+          // Apply speech speed
           try {
-            audio.playbackRate = getSpeechRate();
+            audio.playbackRate = activeRate;
           } catch {
             // ignore
           }
-        };
 
-        audio.onended = () => {
-          finish(true);
-        };
+          let lastWordIndex = -1;
 
-        audio.onerror = () => {
-          if (timeoutId) clearTimeout(timeoutId);
-          reject(new Error('Audio playback failed'));
-        };
+          // Word synchronization tracker
+          const updateWordHighlight = () => {
+            if (sessionId !== activeSessionId || !currentAudio || currentAudio.paused) return;
 
-        // Safety timeout if audio cannot load or start within 7 seconds
-        timeoutId = setTimeout(() => {
-          if (currentAudio === audio && audio.paused) {
-            reject(new Error('Audio load timeout'));
-          }
-        }, 7000);
-      });
+            const t = currentAudio.currentTime;
+            let activeIdx = -1;
 
-      await audio.play();
-      // Successfully started playing via neural server audio!
-      await playPromise;
-      return true;
+            if (boundaries.length > 0) {
+              // Find matching boundary based on current audio time
+              activeIdx = boundaries.findIndex((b) => t >= b.start && t <= b.end);
+              if (activeIdx === -1) {
+                // If in gap between words, pick the preceding word
+                for (let i = boundaries.length - 1; i >= 0; i--) {
+                  if (t >= boundaries[i].start) {
+                    activeIdx = i;
+                    break;
+                  }
+                }
+              }
+            } else if (words.length > 0) {
+              // Fallback proportional calculation
+              const totalDur = currentAudio.duration || audioDuration || 1;
+              activeIdx = Math.min(words.length - 1, Math.floor((t / totalDur) * words.length));
+            }
+
+            if (activeIdx !== -1 && activeIdx !== lastWordIndex && activeIdx < words.length) {
+              lastWordIndex = activeIdx;
+              notifyState({
+                currentWordIndex: activeIdx,
+                currentWord: words[activeIdx] || '',
+                currentTime: t,
+              });
+            }
+
+            syncTickerId = requestAnimationFrame(updateWordHighlight);
+          };
+
+          const playPromise = new Promise<boolean>((resolve, reject) => {
+            let finished = false;
+
+            const complete = (ok: boolean) => {
+              if (finished) return;
+              finished = true;
+              if (syncTickerId) {
+                cancelAnimationFrame(syncTickerId);
+                syncTickerId = null;
+              }
+              if (sessionId === activeSessionId) {
+                currentAudio = null;
+                notifyState({
+                  isPlaying: false,
+                  messageId: null,
+                  currentWordIndex: -1,
+                  currentWord: '',
+                });
+                if (ok) options?.onEnd?.();
+              }
+              resolve(ok);
+            };
+
+            audio.onplaying = () => {
+              if (sessionId !== activeSessionId) {
+                audio.pause();
+                return;
+              }
+              try {
+                audio.playbackRate = getSpeechRate();
+              } catch {
+                // ignore
+              }
+              syncTickerId = requestAnimationFrame(updateWordHighlight);
+            };
+
+            audio.onended = () => {
+              complete(true);
+            };
+
+            audio.onerror = (e) => {
+              if (userStopped || sessionId !== activeSessionId) {
+                resolve(false);
+              } else {
+                reject(new Error('Audio playback failed'));
+              }
+            };
+          });
+
+          await audio.play();
+          await playPromise;
+          return true;
+        }
+      }
     }
   } catch (audioErr) {
-    // If server audio failed or timed out, gracefully continue to Web Speech API fallback
+    if (userStopped || sessionId !== activeSessionId) {
+      return false;
+    }
+    console.warn('Server TTS failed, attempting client fallback:', audioErr);
     if (currentAudio) {
       try {
         currentAudio.pause();
@@ -321,10 +449,28 @@ export async function speakMessageText(
     }
   }
 
-  // Try 2: Browser native Web Speech API (speechSynthesis)
+  if (userStopped || sessionId !== activeSessionId) {
+    return false;
+  }
+
+  // Try 2: Browser native Web Speech API (speechSynthesis) with word boundary events
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     try {
       window.speechSynthesis.cancel();
+
+      const voices = window.speechSynthesis.getVoices?.() || [];
+      const hasPersianVoice = voices.some((v) =>
+        v.lang.toLowerCase().includes('fa') ||
+        v.name.toLowerCase().includes('persian') ||
+        v.name.toLowerCase().includes('farsi')
+      );
+
+      // If text is Persian and browser lacks Persian voice, notify user cleanly
+      if (shortLang === 'fa' && !hasPersianVoice) {
+        notifyState({ isPlaying: false, messageId: null, currentWordIndex: -1, currentWord: '' });
+        options?.onError?.(new Error('برای پخش صدای طبیعی فارسی، اتصال اینترنت مورد نیاز است.'));
+        return false;
+      }
 
       const utterance = new SpeechSynthesisUtterance(clean);
       currentUtterance = utterance;
@@ -332,9 +478,8 @@ export async function speakMessageText(
       utterance.rate = activeRate;
       utterance.pitch = 1.0;
 
-      // Select matching voice if available
-      const voices = window.speechSynthesis.getVoices?.() || [];
-      const matchingVoice = voices.find(v => {
+      // Select matching voice
+      const matchingVoice = voices.find((v) => {
         if (targetLang.startsWith('fa')) {
           return v.lang.toLowerCase().includes('fa') || v.name.toLowerCase().includes('persian') || v.name.toLowerCase().includes('farsi');
         }
@@ -348,21 +493,35 @@ export async function speakMessageText(
         utterance.voice = matchingVoice;
       }
 
+      // Live word-by-word boundary tracking
+      utterance.onboundary = (event) => {
+        if (sessionId !== activeSessionId || userStopped) return;
+        if (event.name === 'word' || typeof event.charIndex === 'number') {
+          const charIdx = event.charIndex;
+          const preText = clean.slice(0, charIdx);
+          const wordIdx = preText.trim().split(/\s+/).filter(Boolean).length;
+          const clampedIdx = Math.min(words.length - 1, wordIdx);
+          notifyState({
+            currentWordIndex: clampedIdx,
+            currentWord: words[clampedIdx] || '',
+          });
+        }
+      };
+
       return new Promise<boolean>((resolve) => {
         utterance.onend = () => {
-          if (currentUtterance === utterance) {
+          if (sessionId === activeSessionId) {
             currentUtterance = null;
-            notifyState({ isPlaying: false, messageId: null, text: '' });
+            notifyState({ isPlaying: false, messageId: null, currentWordIndex: -1, currentWord: '' });
             options?.onEnd?.();
           }
           resolve(true);
         };
 
         utterance.onerror = (e) => {
-          console.warn('SpeechSynthesis error:', e);
-          if (currentUtterance === utterance) {
+          if (sessionId === activeSessionId && !userStopped) {
             currentUtterance = null;
-            notifyState({ isPlaying: false, messageId: null, text: '' });
+            notifyState({ isPlaying: false, messageId: null, currentWordIndex: -1, currentWord: '' });
             options?.onError?.(e);
           }
           resolve(false);
@@ -375,7 +534,7 @@ export async function speakMessageText(
     }
   }
 
-  notifyState({ isPlaying: false, messageId: null, text: '' });
+  notifyState({ isPlaying: false, messageId: null, currentWordIndex: -1, currentWord: '' });
   options?.onError?.(new Error('دستگاه از پخش صدا پشتیبانی نمی‌کند.'));
   return false;
 }
