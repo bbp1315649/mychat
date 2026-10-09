@@ -913,7 +913,7 @@ app.all(['/api/tts', '/api/speech'], async (req, res) => {
     if (format === 'json') {
       return res.json({
         success: true,
-        audioUrl: `data:audio/mp3;base64,${buffer.toString('base64')}`,
+        audioUrl: `data:audio/mpeg;base64,${buffer.toString('base64')}`,
         wordBoundaries,
         duration,
         text: cleanText,

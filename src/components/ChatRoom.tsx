@@ -1363,8 +1363,14 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                             <div className="mt-2 pt-1.5 border-t border-white/20 flex items-center justify-between gap-1.5 text-[11px] text-emerald-300 font-medium select-none animate-fadeIn bg-black/25 px-2 py-1.5 rounded-xl">
                               <span className="flex items-center gap-1.5 truncate">
                                 <Volume2 className="w-3.5 h-3.5 text-emerald-400 animate-pulse shrink-0" />
-                                <span className="truncate">
-                                  در حال خواندن: <strong className="text-amber-300 font-bold bg-amber-400/20 px-1 py-0.5 rounded text-xs">{speechState.currentWord || '...'}</strong>
+                                <span className="truncate flex items-center gap-1">
+                                  <span>در حال خواندن:</span>
+                                  <strong className="text-amber-300 font-bold bg-amber-400/20 px-1 py-0.5 rounded text-xs">{speechState.currentWord || '...'}</strong>
+                                  {speechState.totalLines > 1 && (
+                                    <span className="text-[10px] text-emerald-200/90 bg-emerald-500/20 px-1.5 py-0.2 rounded border border-emerald-400/30 mr-1">
+                                      خط {speechState.currentLineIndex + 1} از {speechState.totalLines}
+                                    </span>
+                                  )}
                                 </span>
                               </span>
                               <button

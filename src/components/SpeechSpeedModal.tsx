@@ -25,7 +25,7 @@ interface SpeechSpeedModalProps {
   onClose: () => void;
 }
 
-const SAMPLE_PHRASE = 'این یک نمونه صوتی از سرعت گفتار تنظیم‌شده است.';
+const SAMPLE_PHRASE = 'این یک نمونه صوتی از سرعت گفتار تنظیم‌شده است.\nخط دوم برای نمایش خوانش خط‌به‌خط پیام‌ها.';
 
 export const SpeechSpeedModal: React.FC<SpeechSpeedModalProps> = ({
   isOpen,
