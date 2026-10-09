@@ -1,19 +1,22 @@
 /**
  * Text-to-Speech (TTS) Utility for School Chat
+ * 
+ * Uses the proven, high-compatibility Native Web Speech API (SpeechSynthesisUtterance)
+ * which runs directly on the user's device without any external server or VPN dependency.
+ * 
  * Features:
- * - Dual-layer architecture: High-fidelity Server Neural Speech (when reachable) +
- *   Zero-failure Client Speech & Visual Pacing (works 100% without VPN, in Iran, or offline).
- * - Simultaneous Line-by-Line (خط به خط) and Word-by-Word (کلمه به کلمه) Karaoke highlighting.
- * - Millisecond-accurate word boundaries from EdgeTTS (DilaraNeural) when online.
- * - Natural human pacing with punctuation pauses and speech rate scaling (0.7x to 1.2x).
- * - Standard audio/mpeg Blob URLs for instant playback across all mobile browsers.
- * - Clean user gesture handling and safe cancellation with zero ghost playback.
+ * - Native Persian (fa-IR) speech synthesis using device's built-in voice engine (Google TTS, Windows, Apple)
+ * - Automatic language detection (Persian, English, French, Arabic, etc.)
+ * - Adjustable speech speed rate (0.7x to 1.2x, default 0.85x)
+ * - Live Line-by-Line (خط به خط) and Word-by-Word (کلمه به کلمه) Karaoke highlighting
+ * - Zero network latency, 100% offline support, and no VPN requirements
+ * - Clean state management with single-tap toggle to play/stop
  */
 
 export interface WordTiming {
   text: string;
-  start: number; // in seconds
-  end: number;   // in seconds
+  start: number;
+  end: number;
 }
 
 export interface SpeechPlaybackState {
@@ -69,14 +72,11 @@ export function getSpeechRate(): number {
   return DEFAULT_SPEECH_RATE;
 }
 
-// Global active audio & session tracking
-let currentAudio: HTMLAudioElement | null = null;
-let currentBlobUrl: string | null = null;
+// Active speech synthesis variables
 let currentUtterance: SpeechSynthesisUtterance | null = null;
 let activeSessionId = 0;
-let syncTickerId: any = null;
-let clientPacingTimer: any = null;
-let userStopped = false;
+let pacingTimer: any = null;
+let chromeKeepAliveInterval: any = null;
 let stateChangeListeners: Set<(state: SpeechPlaybackState) => void> = new Set();
 
 let currentState: SpeechPlaybackState = {
@@ -108,22 +108,13 @@ function notifyState(partial: Partial<SpeechPlaybackState>) {
 }
 
 /**
- * Update speech rate, store in localStorage, and dynamically update active audio
+ * Update speech rate and store in localStorage
  */
 export function setSpeechRate(rate: number): void {
   const clamped = Math.max(0.5, Math.min(1.5, Math.round(rate * 100) / 100));
   if (typeof window !== 'undefined') {
     try {
       localStorage.setItem('tts_speech_rate', clamped.toString());
-    } catch {
-      // ignore
-    }
-  }
-
-  // Instantly apply to active audio if currently playing
-  if (currentAudio) {
-    try {
-      currentAudio.playbackRate = clamped;
     } catch {
       // ignore
     }
@@ -145,7 +136,7 @@ export function getCurrentSpeechState(): SpeechPlaybackState {
 }
 
 /**
- * Split text into individual speech words for highlight rendering
+ * Split text into speech words
  */
 export function extractSpeechWords(text: string): string[] {
   if (!text) return [];
@@ -213,63 +204,31 @@ export function detectLanguage(text: string): {
   return { lang: 'fa-IR', shortLang: 'fa', label: 'فارسی', isRtl: true };
 }
 
-/**
- * Converts a base64 audio data URI to an object URL Blob
- * which is 100% compatible across mobile Safari and Android WebViews
- */
-function base64ToBlobUrl(base64Data: string, mimeType = 'audio/mpeg'): string {
-  const base64Clean = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-  const binaryStr = atob(base64Clean);
-  const bytes = new Uint8Array(binaryStr.length);
-  for (let i = 0; i < binaryStr.length; i++) {
-    bytes[i] = binaryStr.charCodeAt(i);
-  }
-  const blob = new Blob([bytes], { type: mimeType });
-  return URL.createObjectURL(blob);
+// Pre-load voices on startup
+if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+  window.speechSynthesis.getVoices();
+  window.speechSynthesis.onvoiceschanged = () => {
+    window.speechSynthesis.getVoices();
+  };
 }
 
 /**
- * Stop any current audio or speech synthesis immediately
+ * Stop any current speech synthesis immediately
  */
 export function stopSpeech(): void {
-  userStopped = true;
   activeSessionId++;
 
-  if (syncTickerId) {
-    cancelAnimationFrame(syncTickerId);
-    syncTickerId = null;
+  if (pacingTimer) {
+    clearTimeout(pacingTimer);
+    pacingTimer = null;
   }
 
-  if (clientPacingTimer) {
-    clearTimeout(clientPacingTimer);
-    clientPacingTimer = null;
+  if (chromeKeepAliveInterval) {
+    clearInterval(chromeKeepAliveInterval);
+    chromeKeepAliveInterval = null;
   }
 
-  // Stop HTML5 Audio
-  if (currentAudio) {
-    try {
-      currentAudio.pause();
-      currentAudio.onplaying = null;
-      currentAudio.onended = null;
-      currentAudio.onerror = null;
-      currentAudio.ontimeupdate = null;
-      currentAudio.src = '';
-    } catch {
-      // ignore
-    }
-    currentAudio = null;
-  }
-
-  if (currentBlobUrl) {
-    try {
-      URL.revokeObjectURL(currentBlobUrl);
-    } catch {
-      // ignore
-    }
-    currentBlobUrl = null;
-  }
-
-  // Stop Web Speech API
+  // Stop Web Speech API cleanly
   if (typeof window !== 'undefined' && window.speechSynthesis) {
     try {
       window.speechSynthesis.cancel();
@@ -297,137 +256,11 @@ export function stopSpeech(): void {
 }
 
 /**
- * Client Speech & Visual Pacing Engine (Guaranteed to work without VPN, in Iran, or offline)
- * Runs browser speech synthesis while advancing line-by-line and word-by-word highlight.
+ * Speak text using the original, reliable Native Web Speech API.
+ * Accurately reads Persian messages and updates Line-by-Line & Word-by-Word highlighting.
+ * Tapping once plays; tapping again while playing stops.
  */
-function startClientSpeechAndPacing(
-  cleanText: string,
-  targetLang: string,
-  shortLang: string,
-  activeRate: number,
-  words: string[],
-  sessionId: number,
-  options?: { onEnd?: () => void; onError?: (err: any) => void }
-): void {
-  if (sessionId !== activeSessionId || userStopped) return;
-
-  const lines = cleanText.split('\n');
-  const totalLines = lines.length;
-
-  // 1. Start browser speech synthesis if available
-  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-    try {
-      window.speechSynthesis.cancel();
-
-      const voices = window.speechSynthesis.getVoices?.() || [];
-      // Look for Persian voice, Arabic voice (which reads Persian alphabet), or system default
-      const persianVoice = voices.find((v) =>
-        v.lang.toLowerCase().includes('fa') ||
-        v.name.toLowerCase().includes('persian') ||
-        v.name.toLowerCase().includes('farsi')
-      );
-      const arabicVoice = voices.find((v) =>
-        v.lang.toLowerCase().startsWith('ar') ||
-        v.name.toLowerCase().includes('arabic')
-      );
-      const matchingVoice = persianVoice || arabicVoice || voices.find((v) => v.lang.toLowerCase().startsWith(shortLang)) || voices[0];
-
-      const utterance = new SpeechSynthesisUtterance(cleanText);
-      currentUtterance = utterance;
-      utterance.lang = persianVoice ? 'fa-IR' : arabicVoice ? 'ar-SA' : targetLang;
-      utterance.rate = activeRate;
-      utterance.pitch = 1.0;
-
-      if (matchingVoice) {
-        utterance.voice = matchingVoice;
-      }
-
-      utterance.onboundary = (e) => {
-        if (sessionId !== activeSessionId || userStopped) return;
-        if (e.name === 'word' || typeof e.charIndex === 'number') {
-          const charIdx = e.charIndex;
-          const preText = cleanText.slice(0, charIdx);
-          const wIdx = preText.trim().split(/\s+/).filter(Boolean).length;
-          const clamped = Math.min(words.length - 1, wIdx);
-          const { lineIndex } = getLineIndexForWord(cleanText, clamped);
-          notifyState({
-            currentWordIndex: clamped,
-            currentWord: words[clamped] || '',
-            currentLineIndex: lineIndex,
-          });
-        }
-      };
-
-      utterance.onend = () => {
-        if (sessionId === activeSessionId) {
-          currentUtterance = null;
-          stopSpeech();
-          options?.onEnd?.();
-        }
-      };
-
-      utterance.onerror = () => {
-        // Continue visual pacing even if voice engine throws error
-      };
-
-      window.speechSynthesis.speak(utterance);
-    } catch (e) {
-      console.warn('Client speechSynthesis start:', e);
-    }
-  }
-
-  // 2. High-precision visual pacing loop (runs reliably whether audio is synthesized or offline)
-  let currentWordIdx = 0;
-  const advancePacing = () => {
-    if (sessionId !== activeSessionId || userStopped) return;
-
-    if (currentWordIdx >= words.length) {
-      // Completed reading all words
-      if (sessionId === activeSessionId) {
-        stopSpeech();
-        options?.onEnd?.();
-      }
-      return;
-    }
-
-    const { lineIndex } = getLineIndexForWord(cleanText, currentWordIdx);
-    notifyState({
-      currentWordIndex: currentWordIdx,
-      currentWord: words[currentWordIdx] || '',
-      currentLineIndex: lineIndex,
-      totalLines,
-    });
-
-    const activeWord = words[currentWordIdx] || '';
-    currentWordIdx++;
-
-    // Calculate natural delay for this word based on length & punctuation
-    // Average speech pace: ~320ms per word at 1.0x rate
-    let delay = Math.round(330 / activeRate);
-
-    // Longer words take slightly longer
-    if (activeWord.length > 5) {
-      delay += Math.min(150, (activeWord.length - 5) * 25);
-    }
-
-    // Punctuation pauses
-    if (/[,،]/.test(activeWord)) {
-      delay += 200; // comma pause
-    } else if (/[.!؟?]/.test(activeWord)) {
-      delay += 380; // sentence end pause
-    }
-
-    clientPacingTimer = setTimeout(advancePacing, delay);
-  };
-
-  advancePacing();
-}
-
-/**
- * Speak text in its native language with real-time Line-by-Line & Word-by-Word tracking.
- * Works seamlessly both with VPN (server neural synthesis) and without VPN (client speech & pacing).
- */
-export async function speakMessageText(
+export function speakMessageText(
   text: string,
   messageId?: string,
   options?: {
@@ -436,24 +269,22 @@ export async function speakMessageText(
     onError?: (err: any) => void;
     forceLang?: string;
   }
-): Promise<boolean> {
+): boolean {
   const clean = text?.trim();
   if (!clean) return false;
 
-  // If already playing this exact message, toggle stop
+  // Toggle stop if already playing this exact message
   if (currentState.isPlaying && messageId && currentState.messageId === messageId) {
     stopSpeech();
     return false;
   }
 
-  // Stop any other active playback first
+  // Stop previous speech cleanly
   stopSpeech();
-  userStopped = false;
 
   const sessionId = ++activeSessionId;
   const detected = detectLanguage(clean);
   const targetLang = options?.forceLang || detected.lang;
-  const shortLang = detected.shortLang;
   const activeRate = getSpeechRate();
   const words = extractSpeechWords(clean);
   const { lineIndex, totalLines } = getLineIndexForWord(clean, 0);
@@ -470,194 +301,152 @@ export async function speakMessageText(
     currentLineIndex: lineIndex,
     totalLines,
     words,
-    wordBoundaries: [],
     currentTime: 0,
     duration: 0,
   });
 
   options?.onStart?.();
 
-  // Try 1: High quality server audio endpoint (/api/tts)
-  // Protected with a strict 2-second timeout so users without VPN never get stuck!
-  try {
-    const isStaticHost = typeof window !== 'undefined' && (
-      window.location.hostname.endsWith('github.io') ||
-      window.location.hostname.endsWith('pages.dev') ||
-      window.location.protocol === 'file:'
-    );
-
-    if (!isStaticHost) {
-      const res = await fetch('/api/tts', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify({
-          text: clean.slice(0, 500),
-          lang: shortLang,
-          rate: activeRate,
-          format: 'json',
-        }),
-        signal: AbortSignal.timeout(2000), // Fast 2s timeout for non-VPN resiliency
-      });
-
-      if (sessionId !== activeSessionId || userStopped) {
-        return false;
-      }
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.audioUrl) {
-          const boundaries: WordTiming[] = data.wordBoundaries || [];
-          const audioDuration: number = data.duration || 0;
-
-          notifyState({
-            wordBoundaries: boundaries,
-            duration: audioDuration,
-          });
-
-          // Convert base64 to standard audio/mpeg Blob URL
-          const blobUrl = base64ToBlobUrl(data.audioUrl, 'audio/mpeg');
-          currentBlobUrl = blobUrl;
-
-          const audio = new Audio();
-          audio.preload = 'auto';
-          audio.src = blobUrl;
-          currentAudio = audio;
-
-          // Apply speech speed
-          try {
-            audio.playbackRate = activeRate;
-          } catch {
-            // ignore
-          }
-
-          let lastWordIndex = -1;
-
-          // Word & Line synchronization tracker
-          const updateWordHighlight = () => {
-            if (sessionId !== activeSessionId || !currentAudio || currentAudio.paused) return;
-
-            const t = currentAudio.currentTime;
-            let activeIdx = -1;
-
-            if (boundaries.length > 0) {
-              // Find matching boundary based on current audio time
-              activeIdx = boundaries.findIndex((b) => t >= b.start && t <= b.end);
-              if (activeIdx === -1) {
-                for (let i = boundaries.length - 1; i >= 0; i--) {
-                  if (t >= boundaries[i].start) {
-                    activeIdx = i;
-                    break;
-                  }
-                }
-              }
-            } else if (words.length > 0) {
-              const totalDur = currentAudio.duration || audioDuration || 1;
-              activeIdx = Math.min(words.length - 1, Math.floor((t / totalDur) * words.length));
-            }
-
-            if (activeIdx !== -1 && activeIdx !== lastWordIndex && activeIdx < words.length) {
-              lastWordIndex = activeIdx;
-              const { lineIndex: lIdx } = getLineIndexForWord(clean, activeIdx);
-              notifyState({
-                currentWordIndex: activeIdx,
-                currentWord: words[activeIdx] || '',
-                currentLineIndex: lIdx,
-                totalLines,
-                currentTime: t,
-              });
-            }
-
-            syncTickerId = requestAnimationFrame(updateWordHighlight);
-          };
-
-          const playPromise = new Promise<boolean>((resolve, reject) => {
-            let finished = false;
-
-            const complete = (ok: boolean) => {
-              if (finished) return;
-              finished = true;
-              if (syncTickerId) {
-                cancelAnimationFrame(syncTickerId);
-                syncTickerId = null;
-              }
-              if (sessionId === activeSessionId) {
-                currentAudio = null;
-                notifyState({
-                  isPlaying: false,
-                  messageId: null,
-                  currentWordIndex: -1,
-                  currentWord: '',
-                  currentLineIndex: 0,
-                });
-                if (ok) options?.onEnd?.();
-              }
-              resolve(ok);
-            };
-
-            audio.onplaying = () => {
-              if (sessionId !== activeSessionId) {
-                audio.pause();
-                return;
-              }
-              try {
-                audio.playbackRate = getSpeechRate();
-              } catch {
-                // ignore
-              }
-              syncTickerId = requestAnimationFrame(updateWordHighlight);
-            };
-
-            audio.onended = () => {
-              complete(true);
-            };
-
-            audio.onerror = () => {
-              if (userStopped || sessionId !== activeSessionId) {
-                resolve(false);
-              } else {
-                reject(new Error('Audio playback failed'));
-              }
-            };
-          });
-
-          await audio.play();
-          await playPromise;
-          return true;
-        }
-      }
-    }
-  } catch (audioErr) {
-    if (userStopped || sessionId !== activeSessionId) {
-      return false;
-    }
-    console.warn('Server TTS unavailable or timed out; activating zero-failure client speech & pacing.');
-    if (currentAudio) {
-      try {
-        currentAudio.pause();
-      } catch {}
-      currentAudio = null;
-    }
-  }
-
-  if (userStopped || sessionId !== activeSessionId) {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+    notifyState({ isPlaying: false, messageId: null, currentWordIndex: -1, currentWord: '' });
+    options?.onError?.(new Error('مرورگر شما از پخش صدا پشتیبانی نمی‌کند.'));
     return false;
   }
 
-  // Try 2: Guaranteed Client Speech & Visual Pacing (works without VPN in Iran / offline)
-  startClientSpeechAndPacing(clean, targetLang, shortLang, activeRate, words, sessionId, options);
-  return true;
+  try {
+    // 1. Prepare SpeechSynthesisUtterance
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(clean);
+    currentUtterance = utterance;
+    utterance.lang = targetLang; // e.g. 'fa-IR'
+    utterance.rate = activeRate;  // e.g. 0.85
+    utterance.pitch = 1.0;
+
+    // Pick matching voice if available
+    const voices = window.speechSynthesis.getVoices();
+    const matchingVoice = voices.find((v) => {
+      if (targetLang.startsWith('fa')) {
+        return (
+          v.lang.toLowerCase().startsWith('fa') ||
+          v.lang.toLowerCase().includes('ir') ||
+          v.name.toLowerCase().includes('persian') ||
+          v.name.toLowerCase().includes('farsi')
+        );
+      }
+      if (targetLang.startsWith('en')) {
+        return v.lang.toLowerCase().startsWith('en');
+      }
+      return v.lang.toLowerCase().startsWith(targetLang.slice(0, 2));
+    });
+
+    if (matchingVoice) {
+      utterance.voice = matchingVoice;
+    }
+
+    let hasBoundaryFired = false;
+
+    // 2. Synchronize Word-by-Word & Line-by-Line via onboundary
+    utterance.onboundary = (e) => {
+      if (sessionId !== activeSessionId) return;
+      hasBoundaryFired = true;
+
+      if (e.name === 'word' || typeof e.charIndex === 'number') {
+        const charIdx = e.charIndex;
+        const preText = clean.slice(0, charIdx);
+        const wIdx = preText.trim().split(/\s+/).filter(Boolean).length;
+        const clamped = Math.min(words.length - 1, wIdx);
+        const { lineIndex: lIdx } = getLineIndexForWord(clean, clamped);
+
+        notifyState({
+          currentWordIndex: clamped,
+          currentWord: words[clamped] || '',
+          currentLineIndex: lIdx,
+          totalLines,
+        });
+      }
+    };
+
+    // 3. Fallback smooth word pacing if browser onboundary is not emitted
+    let pacingIndex = 0;
+    const runPacingFallback = () => {
+      if (sessionId !== activeSessionId || !currentState.isPlaying) return;
+
+      if (pacingIndex < words.length) {
+        if (!hasBoundaryFired) {
+          const { lineIndex: lIdx } = getLineIndexForWord(clean, pacingIndex);
+          notifyState({
+            currentWordIndex: pacingIndex,
+            currentWord: words[pacingIndex] || '',
+            currentLineIndex: lIdx,
+            totalLines,
+          });
+        }
+
+        const currentWord = words[pacingIndex] || '';
+        pacingIndex++;
+
+        // Natural speech pacing based on word length and punctuation
+        let delay = Math.round(340 / activeRate);
+        if (currentWord.length > 5) {
+          delay += Math.min(120, (currentWord.length - 5) * 20);
+        }
+        if (/[,،]/.test(currentWord)) {
+          delay += 180;
+        } else if (/[.!؟?]/.test(currentWord)) {
+          delay += 350;
+        }
+
+        pacingTimer = setTimeout(runPacingFallback, delay);
+      }
+    };
+
+    pacingTimer = setTimeout(runPacingFallback, Math.round(200 / activeRate));
+
+    // 4. Chrome long text keep-alive
+    chromeKeepAliveInterval = setInterval(() => {
+      if (typeof window !== 'undefined' && window.speechSynthesis && window.speechSynthesis.speaking) {
+        window.speechSynthesis.pause();
+        window.speechSynthesis.resume();
+      } else {
+        clearInterval(chromeKeepAliveInterval);
+      }
+    }, 10000);
+
+    // 5. Completion handlers
+    utterance.onend = () => {
+      if (sessionId === activeSessionId) {
+        stopSpeech();
+        options?.onEnd?.();
+      }
+    };
+
+    utterance.onerror = (e) => {
+      if (sessionId === activeSessionId) {
+        console.warn('SpeechSynthesis error:', e);
+        stopSpeech();
+        options?.onError?.(e);
+      }
+    };
+
+    // 6. Speak natively!
+    window.speechSynthesis.speak(utterance);
+    return true;
+  } catch (err) {
+    console.error('Failed to start speech synthesis:', err);
+    stopSpeech();
+    options?.onError?.(err);
+    return false;
+  }
 }
 
 /**
- * Quick preview test of current speech rate
+ * Quick preview test of speech rate
  */
 export function testSpeechRateSample(rate?: number): void {
   if (rate) {
     setSpeechRate(rate);
   }
-  const sample = 'این یک نمونه صوتی از سرعت گفتار تنظیم‌شده است.\nخط دوم برای نمایش خوانش خط‌به‌خط پیام‌ها.';
+  const sample = 'این یک نمونه صوتی از سرعت گفتار تنظیم‌شده است.\nخط دوم برای آزمایش خوانش خط‌به‌خط پیام‌ها.';
   speakMessageText(sample, 'sample_test_tts');
 }
