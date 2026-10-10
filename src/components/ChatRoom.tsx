@@ -1206,9 +1206,19 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                             />
                           </p>
                           {speechState.isPlaying && speechState.messageId === `${msg.id}_transcript` && (
-                            <div className="mt-2 pt-1 border-t border-white/20 flex items-center justify-between gap-1 text-[10px] text-emerald-300 font-medium select-none">
-                              <span className="truncate">
-                                در حال خواندن: <strong className="text-amber-300 font-bold bg-amber-400/20 px-1 py-0.5 rounded">{speechState.currentWord || '...'}</strong>
+                            <div className="mt-2 pt-1 border-t border-white/20 flex flex-wrap items-center justify-between gap-1.5 text-[10px] text-emerald-300 font-medium select-none bg-black/25 px-2 py-1 rounded-lg">
+                              <span className="flex items-center gap-1 flex-wrap">
+                                <span>در حال خواندن:</span>
+                                <strong className="text-slate-950 font-bold bg-amber-400 px-1.5 py-0.5 rounded">{speechState.currentWord || '...'}</strong>
+                                <span className="text-white/60 mx-0.5">{speechState.isEnglishSpoken ? '⟵' : '⟶'}</span>
+                                <span className="text-slate-300">{speechState.isEnglishSpoken ? 'ترجمه:' : 'English:'}</span>
+                                <strong className={`px-1.5 py-0.5 rounded font-bold ${
+                                  speechState.isEnglishSpoken
+                                    ? 'text-emerald-300 bg-emerald-500/20 border border-emerald-400/30'
+                                    : 'text-cyan-300 bg-cyan-500/20 border border-cyan-400/30 font-mono'
+                                }`}>
+                                  {speechState.currentWordTranslation || '...'}
+                                </strong>
                               </span>
                               <button
                                 type="button"
@@ -1216,9 +1226,10 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                                   e.stopPropagation();
                                   stopSpeech();
                                 }}
-                                className="text-[9px] bg-rose-500/20 text-rose-300 px-1.5 py-0.2 rounded border border-rose-500/30"
+                                className="text-[9px] bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 px-1.5 py-0.5 rounded border border-rose-500/30 transition-colors flex items-center gap-1"
                               >
-                                توقف
+                                <Square className="w-2 h-2 fill-current" />
+                                <span>توقف</span>
                               </button>
                             </div>
                           )}
@@ -1358,14 +1369,23 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                             />
                           </p>
 
-                          {/* Active Speaking Indicator on the message with Karaoke Word Highlight */}
+                          {/* Active Speaking Indicator on the message with Karaoke Word Highlight & Live Translation */}
                           {speechState.isPlaying && speechState.messageId === msg.id && (
-                            <div className="mt-2 pt-1.5 border-t border-white/20 flex items-center justify-between gap-1.5 text-[11px] text-emerald-300 font-medium select-none animate-fadeIn bg-black/25 px-2 py-1.5 rounded-xl">
-                              <span className="flex items-center gap-1.5 truncate">
+                            <div className="mt-2 pt-1.5 border-t border-white/20 flex flex-wrap items-center justify-between gap-1.5 text-[11px] text-emerald-300 font-medium select-none animate-fadeIn bg-black/35 px-2.5 py-1.5 rounded-xl">
+                              <span className="flex items-center gap-1.5 flex-wrap">
                                 <Volume2 className="w-3.5 h-3.5 text-emerald-400 animate-pulse shrink-0" />
-                                <span className="truncate flex items-center gap-1">
+                                <span className="flex items-center gap-1 flex-wrap">
                                   <span>در حال خواندن:</span>
-                                  <strong className="text-amber-300 font-bold bg-amber-400/20 px-1 py-0.5 rounded text-xs">{speechState.currentWord || '...'}</strong>
+                                  <strong className="text-slate-950 font-bold bg-amber-400 px-1.5 py-0.5 rounded text-xs">{speechState.currentWord || '...'}</strong>
+                                  <span className="text-white/60 mx-0.5">{speechState.isEnglishSpoken ? '⟵' : '⟶'}</span>
+                                  <span className="text-slate-300 text-[10px]">{speechState.isEnglishSpoken ? 'ترجمه:' : 'English:'}</span>
+                                  <strong className={`px-1.5 py-0.5 rounded text-xs font-bold ${
+                                    speechState.isEnglishSpoken
+                                      ? 'text-emerald-300 bg-emerald-500/20 border border-emerald-400/30'
+                                      : 'text-cyan-300 bg-cyan-500/20 border border-cyan-400/30 font-mono'
+                                  }`}>
+                                    {speechState.currentWordTranslation || '...'}
+                                  </strong>
                                   {speechState.totalLines > 1 && (
                                     <span className="text-[10px] text-emerald-200/90 bg-emerald-500/20 px-1.5 py-0.2 rounded border border-emerald-400/30 mr-1">
                                       خط {speechState.currentLineIndex + 1} از {speechState.totalLines}
@@ -1463,10 +1483,14 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                         />
                       </div>
                       {speechState.isPlaying && speechState.messageId === `${msg.id}_trans` && (
-                        <div className="mt-1 text-[9px] text-emerald-300 flex items-center justify-between gap-1 select-none">
-                          <span className="flex items-center gap-1">
-                            <Volume2 className="w-3 h-3 animate-pulse" />
-                            <span>در حال خواندن: <strong className="text-amber-300">{speechState.currentWord || '...'}</strong></span>
+                        <div className="mt-1.5 pt-1 border-t border-indigo-400/30 flex flex-wrap items-center justify-between gap-1 text-[10px] text-indigo-200 select-none bg-black/25 px-2 py-1 rounded-lg">
+                          <span className="flex items-center gap-1 flex-wrap">
+                            <Volume2 className="w-3 h-3 text-emerald-400 animate-pulse shrink-0" />
+                            <span>در حال خواندن:</span>
+                            <strong className="text-slate-950 font-bold bg-amber-400 px-1.5 py-0.5 rounded text-[11px]">{speechState.currentWord || '...'}</strong>
+                            <span className="text-white/60 mx-0.5">{speechState.isEnglishSpoken ? '⟵' : '⟶'}</span>
+                            <span className="text-slate-300 text-[10px]">{speechState.isEnglishSpoken ? 'ترجمه:' : 'English:'}</span>
+                            <strong className="text-emerald-300 font-bold bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-400/30 text-[11px]">{speechState.currentWordTranslation || '...'}</strong>
                           </span>
                           <button
                             type="button"
@@ -1474,9 +1498,10 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                               e.stopPropagation();
                               stopSpeech();
                             }}
-                            className="text-[9px] bg-rose-500/20 text-rose-300 px-1 py-0.2 rounded"
+                            className="text-[9px] bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 px-1.5 py-0.5 rounded border border-rose-500/30 transition-colors flex items-center gap-1"
                           >
-                            توقف
+                            <Square className="w-2 h-2 fill-current" />
+                            <span>توقف</span>
                           </button>
                         </div>
                       )}
@@ -1705,43 +1730,114 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Active Spoken Speech Bar (TTS / وضعیت پخش گفتار صوتی) */}
+      {/* Active Spoken Speech Bar with Real-Time Word-by-Word Bilingual Translation (پایین صفحه: پخش گفتار و ترجمه بلادرنگ واژگان) */}
       {speechState.isPlaying && (
-        <div className="bg-emerald-950/95 border-t border-emerald-500/40 px-3 py-1.5 flex items-center justify-between text-xs text-emerald-200 z-20 backdrop-blur animate-in slide-in-from-bottom-1 shadow-lg">
-          <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
-            <div className="p-1 rounded-lg bg-emerald-500/20 text-emerald-400 shrink-0">
-              <Volume2 className="w-3.5 h-3.5 animate-pulse" />
+        <div className="bg-slate-900/95 border-t-2 border-emerald-500/70 p-2.5 z-20 backdrop-blur-md animate-in slide-in-from-bottom-2 shadow-2xl space-y-2">
+          {/* Header row: Spoken language, progress count, speed and stop controls */}
+          <div className="flex items-center justify-between text-xs text-slate-200">
+            <div className="flex items-center gap-2 overflow-hidden min-w-0">
+              <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 shrink-0">
+                <Volume2 className="w-4 h-4 animate-pulse" />
+              </div>
+              <div className="flex items-center gap-1.5 text-xs font-semibold truncate">
+                <span className="text-slate-300">در حال خوانش گفتار:</span>
+                {speechState.isEnglishSpoken ? (
+                  <span className="bg-blue-500/25 text-blue-300 border border-blue-400/40 px-2 py-0.5 rounded-md text-[11px] font-bold flex items-center gap-1">
+                    <span>انگلیسی</span>
+                    <span className="text-[10px]">🇬🇧</span>
+                  </span>
+                ) : (
+                  <span className="bg-emerald-500/25 text-emerald-300 border border-emerald-400/40 px-2 py-0.5 rounded-md text-[11px] font-bold flex items-center gap-1">
+                    <span>فارسی</span>
+                    <span className="text-[10px]">🇮🇷</span>
+                  </span>
+                )}
+                {speechState.words.length > 0 && (
+                  <span className="text-[10px] text-slate-400 mr-1 hidden sm:inline">
+                    (کلمه {speechState.currentWordIndex + 1} از {speechState.words.length})
+                  </span>
+                )}
+              </div>
             </div>
-            <div className="truncate text-[11px] flex-1">
-              <div className="font-bold text-emerald-300 flex items-center gap-1.5">
-                <span>در حال پخش صوتی پیام با زبان {speechState.langLabel || 'مربوطه'}</span>
-              </div>
-              <div className="text-emerald-100/90 truncate text-[10px] mt-0.5">
-                «{speechState.text}»
-              </div>
+
+            {/* Action Buttons: Speed & Stop */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowSpeechSpeedModal(true)}
+                className="text-emerald-200 hover:text-white px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 transition-colors flex items-center gap-1 text-[11px] font-medium"
+                title="تنظیم سرعت خواندن گفتار"
+              >
+                <Gauge className="w-3.5 h-3.5 text-emerald-300" />
+                <span className="font-mono text-[10px] font-bold">
+                  {speechState.rate ? `${speechState.rate.toFixed(2)}x` : `${getSpeechRate().toFixed(2)}x`}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={stopSpeech}
+                className="text-rose-200 hover:text-white px-2.5 py-1 rounded-lg bg-rose-500/25 hover:bg-rose-500/35 border border-rose-500/40 transition-colors flex items-center gap-1 text-[11px] font-medium"
+                title="توقف خواندن صوتی"
+              >
+                <Square className="w-3 h-3 fill-current" />
+                <span>توقف</span>
+              </button>
             </div>
           </div>
-          <div className="flex items-center gap-1.5 shrink-0 ml-2">
-            {/* Speed setting button directly inside active speech bar */}
-            <button
-              type="button"
-              onClick={() => setShowSpeechSpeedModal(true)}
-              className="text-emerald-200 hover:text-white px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 transition-colors flex items-center gap-1 text-[11px] font-medium"
-              title="تنظیم سرعت خواندن گفتار"
-            >
-              <Gauge className="w-3.5 h-3.5 text-emerald-300" />
-              <span className="font-mono text-[10px] font-bold">{speechState.rate ? `${speechState.rate.toFixed(2)}x` : `${getSpeechRate().toFixed(2)}x`}</span>
-            </button>
 
-            <button
-              type="button"
-              onClick={stopSpeech}
-              className="text-emerald-200 hover:text-white px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 transition-colors flex items-center gap-1 text-[11px] font-medium"
-              title="توقف خواندن صوتی"
-            >
-              <VolumeX className="w-3.5 h-3.5" />
-              <span>توقف</span>
-            </button>
+          {/* Prominent Bilingual Word-by-Word Translation Card (نمایش کلمه و ترجمه متقابل در پایین صفحه) */}
+          <div className="bg-black/55 border border-emerald-500/30 rounded-xl p-2.5 flex flex-wrap items-center justify-between gap-2.5 shadow-inner">
+            <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+              {/* Spoken Word (کلمه خوانده‌شده) */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-[11px] text-slate-400">
+                  {speechState.isEnglishSpoken ? 'کلمه خوانده‌شده (انگلیسی):' : 'کلمه خوانده‌شده (فارسی):'}
+                </span>
+                <span
+                  dir={speechState.isEnglishSpoken ? 'ltr' : 'rtl'}
+                  className="font-bold text-slate-950 bg-amber-400 px-2.5 py-0.5 rounded-lg shadow-md ring-2 ring-amber-300 text-xs tracking-wide inline-block"
+                >
+                  {speechState.currentWord || '...'}
+                </span>
+              </div>
+
+              {/* Translation Direction Arrow */}
+              <div className="flex items-center text-emerald-400 font-black text-sm px-0.5 select-none shrink-0">
+                {speechState.isEnglishSpoken ? '⟵' : '⟶'}
+              </div>
+
+              {/* Translated Counterpart Word (ترجمه بلادرنگ واژه) */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-[11px] text-slate-400">
+                  {speechState.isEnglishSpoken ? 'ترجمه فارسی کلمه:' : 'English Translation:'}
+                </span>
+                <span
+                  dir={speechState.isEnglishSpoken ? 'rtl' : 'ltr'}
+                  className={`font-bold px-2.5 py-0.5 rounded-lg text-xs shadow-sm border transition-all ${
+                    speechState.currentWordTranslation
+                      ? speechState.isEnglishSpoken
+                        ? 'bg-emerald-500/30 text-emerald-200 border-emerald-400/50 ring-1 ring-emerald-400/30'
+                        : 'bg-cyan-500/30 text-cyan-200 border-cyan-400/50 ring-1 ring-cyan-400/30 font-mono tracking-wide'
+                      : 'bg-slate-800 text-slate-400 border-slate-700 italic'
+                  }`}
+                >
+                  {speechState.currentWordTranslation || (
+                    <span className="flex items-center gap-1">
+                      <Loader2 className="w-3 h-3 animate-spin text-emerald-400" />
+                      <span>در حال دریافت ترجمه...</span>
+                    </span>
+                  )}
+                </span>
+              </div>
+            </div>
+
+            {/* Line indicator if multi-line message */}
+            {speechState.totalLines > 1 && (
+              <span className="text-[10px] text-emerald-300/90 bg-emerald-500/20 border border-emerald-500/30 px-2 py-0.5 rounded-md shrink-0">
+                خط {speechState.currentLineIndex + 1} از {speechState.totalLines}
+              </span>
+            )}
           </div>
         </div>
       )}

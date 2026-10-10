@@ -7,11 +7,18 @@
  * Features:
  * - Native Persian (fa-IR) speech synthesis using device's built-in voice engine (Google TTS, Windows, Apple)
  * - Automatic language detection (Persian, English, French, Arabic, etc.)
+ * - Real-time bilingual word-by-word translation (English -> Persian & Persian -> English)
  * - Adjustable speech speed rate (0.7x to 1.2x, default 0.85x)
  * - Live Line-by-Line (خط به خط) and Word-by-Word (کلمه به کلمه) Karaoke highlighting
  * - Zero network latency, 100% offline support, and no VPN requirements
  * - Clean state management with single-tap toggle to play/stop
  */
+
+import {
+  getInstantWordTranslation,
+  translateSingleWord,
+  prefetchMessageWordTranslations
+} from './wordTranslator';
 
 export interface WordTiming {
   text: string;
@@ -28,6 +35,8 @@ export interface SpeechPlaybackState {
   rate: number;
   currentWordIndex: number;
   currentWord: string;
+  currentWordTranslation: string; // Live translation of active word (En->Fa or Fa->En)
+  isEnglishSpoken: boolean;
   currentLineIndex: number;
   totalLines: number;
   words: string[];
@@ -88,6 +97,8 @@ let currentState: SpeechPlaybackState = {
   rate: getSpeechRate(),
   currentWordIndex: -1,
   currentWord: '',
+  currentWordTranslation: '',
+  isEnglishSpoken: false,
   currentLineIndex: 0,
   totalLines: 1,
   words: [],
@@ -246,6 +257,8 @@ export function stopSpeech(): void {
     langLabel: '',
     currentWordIndex: -1,
     currentWord: '',
+    currentWordTranslation: '',
+    isEnglishSpoken: false,
     currentLineIndex: 0,
     totalLines: 1,
     words: [],
@@ -257,7 +270,8 @@ export function stopSpeech(): void {
 
 /**
  * Speak text using the original, reliable Native Web Speech API.
- * Accurately reads Persian messages and updates Line-by-Line & Word-by-Word highlighting.
+ * Accurately reads Persian messages and updates Line-by-Line & Word-by-Word highlighting,
+ * while simultaneously showing real-time bilingual translation for each spoken word.
  * Tapping once plays; tapping again while playing stops.
  */
 export function speakMessageText(
@@ -285,9 +299,18 @@ export function speakMessageText(
   const sessionId = ++activeSessionId;
   const detected = detectLanguage(clean);
   const targetLang = options?.forceLang || detected.lang;
+  const isEnglish = targetLang.startsWith('en') || (!targetLang.startsWith('fa') && /[a-zA-Z]/.test(clean));
   const activeRate = getSpeechRate();
   const words = extractSpeechWords(clean);
   const { lineIndex, totalLines } = getLineIndexForWord(clean, 0);
+
+  // Background non-blocking warm-up for words translation
+  prefetchMessageWordTranslations(clean, isEnglish);
+
+  const initialWord = words[0] || '';
+  const isInitialLatin = /[a-zA-Z]/.test(initialWord);
+  const initialWordIsEnglish = isInitialLatin || (isEnglish && !/[\u0600-\u06FF]/.test(initialWord));
+  const initialTranslation = initialWord ? (getInstantWordTranslation(initialWord, initialWordIsEnglish) || '') : '';
 
   notifyState({
     isPlaying: true,
@@ -297,13 +320,24 @@ export function speakMessageText(
     langLabel: detected.label,
     rate: activeRate,
     currentWordIndex: 0,
-    currentWord: words[0] || '',
+    currentWord: initialWord,
+    currentWordTranslation: initialTranslation,
+    isEnglishSpoken: initialWordIsEnglish,
     currentLineIndex: lineIndex,
     totalLines,
     words,
     currentTime: 0,
     duration: 0,
   });
+
+  // If initial translation wasn't cached, fetch in background
+  if (initialWord && !initialTranslation) {
+    translateSingleWord(initialWord, initialWordIsEnglish).then((trans) => {
+      if (sessionId === activeSessionId && currentState.currentWordIndex === 0 && trans) {
+        notifyState({ currentWordTranslation: trans });
+      }
+    });
+  }
 
   options?.onStart?.();
 
@@ -319,7 +353,7 @@ export function speakMessageText(
 
     const utterance = new SpeechSynthesisUtterance(clean);
     currentUtterance = utterance;
-    utterance.lang = targetLang; // e.g. 'fa-IR'
+    utterance.lang = targetLang; // e.g. 'fa-IR' or 'en-US'
     utterance.rate = activeRate;  // e.g. 0.85
     utterance.pitch = 1.0;
 
@@ -346,6 +380,33 @@ export function speakMessageText(
 
     let hasBoundaryFired = false;
 
+    // Helper to update active word and its live translation
+    const handleWordActivation = (clampedIndex: number) => {
+      const activeWord = words[clampedIndex] || '';
+      const { lineIndex: lIdx } = getLineIndexForWord(clean, clampedIndex);
+      const isWordLatin = /[a-zA-Z]/.test(activeWord);
+      const wordIsEnglish = isWordLatin || (isEnglish && !/[\u0600-\u06FF]/.test(activeWord));
+      const instantTranslation = getInstantWordTranslation(activeWord, wordIsEnglish) || '';
+
+      notifyState({
+        currentWordIndex: clampedIndex,
+        currentWord: activeWord,
+        currentWordTranslation: instantTranslation,
+        isEnglishSpoken: wordIsEnglish,
+        currentLineIndex: lIdx,
+        totalLines,
+      });
+
+      // If translation wasn't in instant dictionary, asynchronously fetch and update
+      if (activeWord && !instantTranslation) {
+        translateSingleWord(activeWord, wordIsEnglish).then((asyncTrans) => {
+          if (sessionId === activeSessionId && currentState.currentWordIndex === clampedIndex && asyncTrans) {
+            notifyState({ currentWordTranslation: asyncTrans });
+          }
+        });
+      }
+    };
+
     // 2. Synchronize Word-by-Word & Line-by-Line via onboundary
     utterance.onboundary = (e) => {
       if (sessionId !== activeSessionId) return;
@@ -356,14 +417,7 @@ export function speakMessageText(
         const preText = clean.slice(0, charIdx);
         const wIdx = preText.trim().split(/\s+/).filter(Boolean).length;
         const clamped = Math.min(words.length - 1, wIdx);
-        const { lineIndex: lIdx } = getLineIndexForWord(clean, clamped);
-
-        notifyState({
-          currentWordIndex: clamped,
-          currentWord: words[clamped] || '',
-          currentLineIndex: lIdx,
-          totalLines,
-        });
+        handleWordActivation(clamped);
       }
     };
 
@@ -374,26 +428,20 @@ export function speakMessageText(
 
       if (pacingIndex < words.length) {
         if (!hasBoundaryFired) {
-          const { lineIndex: lIdx } = getLineIndexForWord(clean, pacingIndex);
-          notifyState({
-            currentWordIndex: pacingIndex,
-            currentWord: words[pacingIndex] || '',
-            currentLineIndex: lIdx,
-            totalLines,
-          });
+          handleWordActivation(pacingIndex);
         }
 
-        const currentWord = words[pacingIndex] || '';
+        const currentW = words[pacingIndex] || '';
         pacingIndex++;
 
         // Natural speech pacing based on word length and punctuation
         let delay = Math.round(340 / activeRate);
-        if (currentWord.length > 5) {
-          delay += Math.min(120, (currentWord.length - 5) * 20);
+        if (currentW.length > 5) {
+          delay += Math.min(120, (currentW.length - 5) * 20);
         }
-        if (/[,،]/.test(currentWord)) {
+        if (/[,،]/.test(currentW)) {
           delay += 180;
-        } else if (/[.!؟?]/.test(currentWord)) {
+        } else if (/[.!؟?]/.test(currentW)) {
           delay += 350;
         }
 
