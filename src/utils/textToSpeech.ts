@@ -55,8 +55,10 @@ export interface SpeechRatePreset {
 export const DEFAULT_SPEECH_RATE = 0.85;
 
 export const SPEECH_RATE_PRESETS: SpeechRatePreset[] = [
-  { label: 'خیلی آرام', shortLabel: '۰.۷x', rate: 0.7, description: 'بسیار شمرده و با دقت' },
-  { label: 'آرام', shortLabel: '۰.۸x', rate: 0.8, description: 'آهسته و کاملاً واضح' },
+  { label: 'بسیار آهسته', shortLabel: '۰.۴x', rate: 0.4, description: 'فوق‌العاده شمرده برای آموزش' },
+  { label: 'خیلی آرام', shortLabel: '۰.۵x', rate: 0.5, description: 'بسیار شمرده و با دقت' },
+  { label: 'شمرده', shortLabel: '۰.۶۵x', rate: 0.65, description: 'آهسته و کلمه‌به‌کلمه' },
+  { label: 'آرام', shortLabel: '۰.۷۵x', rate: 0.75, description: 'آهسته و کاملاً واضح' },
   { label: 'ملایم (پیش‌فرض)', shortLabel: '۰.۸۵x', rate: 0.85, description: 'سرعت ملایم و دلنشین' },
   { label: 'عادی', shortLabel: '۱.۰x', rate: 1.0, description: 'سرعت استاندارد' },
   { label: 'سریع', shortLabel: '۱.۲x', rate: 1.2, description: 'پخش سریع' },
@@ -71,7 +73,7 @@ export function getSpeechRate(): number {
     const saved = localStorage.getItem('tts_speech_rate');
     if (saved) {
       const parsed = parseFloat(saved);
-      if (!isNaN(parsed) && parsed >= 0.5 && parsed <= 2.0) {
+      if (!isNaN(parsed) && parsed >= 0.35 && parsed <= 2.0) {
         return Math.round(parsed * 100) / 100;
       }
     }
@@ -122,7 +124,7 @@ function notifyState(partial: Partial<SpeechPlaybackState>) {
  * Update speech rate and store in localStorage
  */
 export function setSpeechRate(rate: number): void {
-  const clamped = Math.max(0.5, Math.min(1.5, Math.round(rate * 100) / 100));
+  const clamped = Math.max(0.35, Math.min(1.5, Math.round(rate * 100) / 100));
   if (typeof window !== 'undefined') {
     try {
       localStorage.setItem('tts_speech_rate', clamped.toString());

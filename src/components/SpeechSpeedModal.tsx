@@ -78,8 +78,10 @@ export const SpeechSpeedModal: React.FC<SpeechSpeedModalProps> = ({
   };
 
   const formatRateLabel = (rate: number): string => {
-    if (rate <= 0.75) return 'خیلی آرام و شمرده';
-    if (rate <= 0.82) return 'آرام و دقیق';
+    if (rate <= 0.45) return 'بسیار آهسته و شمرده (آموزشی)';
+    if (rate <= 0.55) return 'خیلی آرام و با دقت';
+    if (rate <= 0.7) return 'شمرده و کلمه‌به‌کلمه';
+    if (rate <= 0.8) return 'آرام و دقیق';
     if (rate <= 0.9) return 'ملایم و دلنشین (پیش‌نهادی)';
     if (rate <= 1.05) return 'عادی و استاندارد';
     return 'سریع';
@@ -143,7 +145,7 @@ export const SpeechSpeedModal: React.FC<SpeechSpeedModalProps> = ({
             <label className="block text-[11px] font-semibold text-slate-300 mb-2">
               گزینه‌های سریع سرعت گفتار:
             </label>
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
               {SPEECH_RATE_PRESETS.map((preset) => {
                 const isSelected = Math.abs(currentRate - preset.rate) < 0.03;
                 return (
@@ -157,8 +159,8 @@ export const SpeechSpeedModal: React.FC<SpeechSpeedModalProps> = ({
                         : 'bg-slate-800/60 border-slate-700/80 text-slate-300 hover:bg-slate-800 hover:border-slate-600'
                     }`}
                   >
-                    <span className="text-[11px]">{preset.label}</span>
-                    <span className="text-[10px] opacity-75 font-mono">{preset.shortLabel}</span>
+                    <span className="text-[10px] font-medium">{preset.label}</span>
+                    <span className="text-[10px] opacity-75 font-mono font-bold">{preset.shortLabel}</span>
                   </button>
                 );
               })}
@@ -173,17 +175,17 @@ export const SpeechSpeedModal: React.FC<SpeechSpeedModalProps> = ({
             </div>
             <input
               type="range"
-              min="0.5"
-              max="1.4"
+              min="0.35"
+              max="1.3"
               step="0.05"
               value={currentRate}
               onChange={handleSliderChange}
               className="w-full accent-emerald-500 h-2 bg-slate-700 rounded-lg cursor-pointer"
             />
             <div className="flex justify-between text-[10px] text-slate-500 pt-0.5">
-              <span>۰.۵x (بسیار آرام)</span>
+              <span>۰.۳۵x (فوق‌العاده آهسته)</span>
               <span>۰.۸۵x (ملایم)</span>
-              <span>۱.۴x (سریع)</span>
+              <span>۱.۳x (سریع)</span>
             </div>
           </div>
 

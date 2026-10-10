@@ -70,6 +70,10 @@ import {
   getSpeechRate,
   getCurrentSpeechState
 } from '../utils/textToSpeech';
+import {
+  getInstantWordTranslation,
+  translateSingleWord
+} from '../utils/wordTranslator';
 
 interface ChatRoomProps {
   chatId: string;
@@ -313,6 +317,62 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
   // Text-To-Speech (TTS / تبدیل متن پیام به گفتار صوتی با همان زبان، هایلایت کارائوکه و قابلیت تنظیم سرعت)
   const [speechState, setSpeechState] = useState<SpeechPlaybackState>(getCurrentSpeechState());
   const [showSpeechSpeedModal, setShowSpeechSpeedModal] = useState<boolean>(false);
+
+  // Interactive mobile tap on word to highlight in yellow and show translation beneath with black font
+  const [tappedWordState, setTappedWordState] = useState<{
+    messageId: string;
+    wordIndex: number;
+    wordText: string;
+    translatedText: string;
+    isLoading: boolean;
+    isEnglish: boolean;
+  } | null>(null);
+
+  const handleWordTap = async (msgId: string, wordIdx: number, wordText: string, fullMsgText: string) => {
+    // If tapping the already selected word, toggle off
+    if (tappedWordState && tappedWordState.messageId === msgId && tappedWordState.wordIndex === wordIdx) {
+      setTappedWordState(null);
+      return;
+    }
+
+    const clean = wordText.trim();
+    if (!clean) return;
+
+    const isWordLatin = /[a-zA-Z]/.test(clean);
+    const msgDetected = detectLanguage(fullMsgText);
+    const isEnglish = isWordLatin || (msgDetected.lang.startsWith('en') && !/[\u0600-\u06FF]/.test(clean));
+
+    // 1. Instant dictionary lookup
+    const instant = getInstantWordTranslation(clean, isEnglish);
+    setTappedWordState({
+      messageId: msgId,
+      wordIndex: wordIdx,
+      wordText: clean,
+      translatedText: instant || '',
+      isLoading: !instant,
+      isEnglish,
+    });
+
+    // 2. Fetch if not in instant dictionary
+    if (!instant) {
+      try {
+        const trans = await translateSingleWord(clean, isEnglish);
+        setTappedWordState((prev) => {
+          if (prev && prev.messageId === msgId && prev.wordIndex === wordIdx) {
+            return { ...prev, translatedText: trans, isLoading: false };
+          }
+          return prev;
+        });
+      } catch {
+        setTappedWordState((prev) => {
+          if (prev && prev.messageId === msgId && prev.wordIndex === wordIdx) {
+            return { ...prev, isLoading: false };
+          }
+          return prev;
+        });
+      }
+    }
+  };
 
   useEffect(() => {
     const unsub = subscribeSpeechState((state) => {
@@ -1203,36 +1263,96 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                               text={msg.voiceTranscript!}
                               isPlaying={speechState.isPlaying && speechState.messageId === `${msg.id}_transcript`}
                               activeWordIndex={speechState.currentWordIndex}
+                              selectedWordIndex={tappedWordState?.messageId === `${msg.id}_transcript` ? tappedWordState.wordIndex : null}
+                              onWordClick={(wIdx, wText) => handleWordTap(`${msg.id}_transcript`, wIdx, wText, msg.voiceTranscript!)}
                             />
                           </p>
-                          {speechState.isPlaying && speechState.messageId === `${msg.id}_transcript` && (
-                            <div className="mt-2 pt-1 border-t border-white/20 flex flex-wrap items-center justify-between gap-1.5 text-[10px] text-emerald-300 font-medium select-none bg-black/25 px-2 py-1 rounded-lg">
-                              <span className="flex items-center gap-1 flex-wrap">
-                                <span>در حال خواندن:</span>
-                                <strong className="text-slate-950 font-bold bg-amber-400 px-1.5 py-0.5 rounded">{speechState.currentWord || '...'}</strong>
-                                <span className="text-white/60 mx-0.5">{speechState.isEnglishSpoken ? '⟵' : '⟶'}</span>
-                                <span className="text-slate-300">{speechState.isEnglishSpoken ? 'ترجمه:' : 'English:'}</span>
-                                <strong className={`px-1.5 py-0.5 rounded font-bold ${
-                                  speechState.isEnglishSpoken
-                                    ? 'text-emerald-300 bg-emerald-500/20 border border-emerald-400/30'
-                                    : 'text-cyan-300 bg-cyan-500/20 border border-cyan-400/30 font-mono'
-                                }`}>
-                                  {speechState.currentWordTranslation || '...'}
-                                </strong>
-                              </span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  stopSpeech();
-                                }}
-                                className="text-[9px] bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 px-1.5 py-0.5 rounded border border-rose-500/30 transition-colors flex items-center gap-1"
-                              >
-                                <Square className="w-2 h-2 fill-current" />
-                                <span>توقف</span>
-                              </button>
+
+                          {/* Interactive Tapped Word Translation (با فونت مشکی) */}
+                          {tappedWordState?.messageId === `${msg.id}_transcript` ? (
+                            <div className="mt-2 pt-1 border-t border-white/20 select-none animate-fadeIn">
+                              <div className="bg-amber-100 border border-amber-300 rounded-xl p-2 shadow-sm flex items-center justify-between gap-1.5 text-[11px]">
+                                <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                  <span className="text-[10px] text-slate-800 font-semibold">
+                                    {tappedWordState.isEnglish ? 'کلمه انگلیسی:' : 'کلمه فارسی:'}
+                                  </span>
+                                  <span className="bg-amber-400 text-slate-950 font-black px-2 py-0.5 rounded-md text-xs shadow-sm ring-1 ring-amber-500">
+                                    {tappedWordState.wordText}
+                                  </span>
+                                  <span className="text-slate-600 font-black text-xs select-none">
+                                    {tappedWordState.isEnglish ? '⟵' : '⟶'}
+                                  </span>
+                                  <span className="text-[10px] text-slate-800 font-semibold">
+                                    {tappedWordState.isEnglish ? 'ترجمه فارسی:' : 'English:'}
+                                  </span>
+                                  {/* Translation with black font */}
+                                  <span className="bg-white text-black font-black px-2.5 py-0.5 rounded-md text-xs shadow-sm border border-slate-300 tracking-wide">
+                                    {tappedWordState.translatedText || (
+                                      tappedWordState.isLoading ? (
+                                        <span className="text-slate-600 italic font-normal flex items-center gap-1">
+                                          <Loader2 className="w-2.5 h-2.5 animate-spin text-slate-700" />
+                                          در حال ترجمه...
+                                        </span>
+                                      ) : '...'
+                                    )}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0 mr-auto">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      speakMessageText(tappedWordState.wordText, `word_${tappedWordState.wordText}`, {
+                                        forceLang: tappedWordState.isEnglish ? 'en-US' : 'fa-IR',
+                                      });
+                                    }}
+                                    className="p-1 rounded-lg bg-amber-200 hover:bg-amber-300 text-slate-900 transition-colors"
+                                    title="تلفظ صوتی کلمه"
+                                  >
+                                    <Volume2 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setTappedWordState(null);
+                                    }}
+                                    className="p-1 rounded-lg hover:bg-amber-200 text-slate-700 hover:text-black transition-colors"
+                                    title="بستن ترجمه"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
                             </div>
-                          )}
+                          ) : speechState.isPlaying && speechState.messageId === `${msg.id}_transcript` ? (
+                            <div className="mt-2 pt-1 border-t border-white/20 select-none animate-fadeIn">
+                              <div className="bg-amber-100 border border-amber-300 rounded-xl p-2 shadow-sm flex flex-wrap items-center justify-between gap-1.5 text-[11px]">
+                                <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                  <Volume2 className="w-3.5 h-3.5 text-emerald-700 animate-pulse shrink-0" />
+                                  <span className="text-[10px] text-slate-800 font-semibold">در حال خواندن:</span>
+                                  <strong className="text-slate-950 font-black bg-amber-400 px-2 py-0.5 rounded-md text-xs shadow-sm ring-1 ring-amber-500">{speechState.currentWord || '...'}</strong>
+                                  <span className="text-slate-600 font-black text-xs select-none">{speechState.isEnglishSpoken ? '⟵' : '⟶'}</span>
+                                  <span className="text-[10px] text-slate-800 font-semibold">{speechState.isEnglishSpoken ? 'ترجمه فارسی:' : 'English:'}</span>
+                                  {/* Translation with black font */}
+                                  <strong className="bg-white text-black font-black px-2.5 py-0.5 rounded-md text-xs shadow-sm border border-slate-300 tracking-wide">
+                                    {speechState.currentWordTranslation || '...'}
+                                  </strong>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    stopSpeech();
+                                  }}
+                                  className="text-[10px] bg-rose-500/20 hover:bg-rose-500/30 text-rose-800 border border-rose-400 px-2 py-0.5 rounded-md flex items-center gap-1 shrink-0 transition-colors mr-auto"
+                                >
+                                  <Square className="w-2.5 h-2.5 fill-current" />
+                                  <span>توقف</span>
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
                       )}
                     </div>
@@ -1366,47 +1486,102 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                               text={msg.content}
                               isPlaying={speechState.isPlaying && speechState.messageId === msg.id}
                               activeWordIndex={speechState.currentWordIndex}
+                              selectedWordIndex={tappedWordState?.messageId === msg.id ? tappedWordState.wordIndex : null}
+                              onWordClick={(wIdx, wText) => handleWordTap(msg.id, wIdx, wText, msg.content)}
                             />
                           </p>
 
-                          {/* Active Speaking Indicator on the message with Karaoke Word Highlight & Live Translation */}
-                          {speechState.isPlaying && speechState.messageId === msg.id && (
-                            <div className="mt-2 pt-1.5 border-t border-white/20 flex flex-wrap items-center justify-between gap-1.5 text-[11px] text-emerald-300 font-medium select-none animate-fadeIn bg-black/35 px-2.5 py-1.5 rounded-xl">
-                              <span className="flex items-center gap-1.5 flex-wrap">
-                                <Volume2 className="w-3.5 h-3.5 text-emerald-400 animate-pulse shrink-0" />
-                                <span className="flex items-center gap-1 flex-wrap">
-                                  <span>در حال خواندن:</span>
-                                  <strong className="text-slate-950 font-bold bg-amber-400 px-1.5 py-0.5 rounded text-xs">{speechState.currentWord || '...'}</strong>
-                                  <span className="text-white/60 mx-0.5">{speechState.isEnglishSpoken ? '⟵' : '⟶'}</span>
-                                  <span className="text-slate-300 text-[10px]">{speechState.isEnglishSpoken ? 'ترجمه:' : 'English:'}</span>
-                                  <strong className={`px-1.5 py-0.5 rounded text-xs font-bold ${
-                                    speechState.isEnglishSpoken
-                                      ? 'text-emerald-300 bg-emerald-500/20 border border-emerald-400/30'
-                                      : 'text-cyan-300 bg-cyan-500/20 border border-cyan-400/30 font-mono'
-                                  }`}>
+                          {/* Interactive Tapped Word Translation on Message (با فونت مشکی طبق درخواست) */}
+                          {tappedWordState?.messageId === msg.id ? (
+                            <div className="mt-2 pt-1 border-t border-white/20 select-none animate-fadeIn">
+                              <div className="bg-amber-100 border border-amber-300 rounded-xl p-2 shadow-sm flex items-center justify-between gap-1.5 text-[11px]">
+                                <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                  <span className="text-[10px] text-slate-800 font-semibold">
+                                    {tappedWordState.isEnglish ? 'کلمه انگلیسی:' : 'کلمه فارسی:'}
+                                  </span>
+                                  <span className="bg-amber-400 text-slate-950 font-black px-2 py-0.5 rounded-md text-xs shadow-sm ring-1 ring-amber-500">
+                                    {tappedWordState.wordText}
+                                  </span>
+                                  <span className="text-slate-600 font-black text-xs select-none">
+                                    {tappedWordState.isEnglish ? '⟵' : '⟶'}
+                                  </span>
+                                  <span className="text-[10px] text-slate-800 font-semibold">
+                                    {tappedWordState.isEnglish ? 'ترجمه فارسی:' : 'English:'}
+                                  </span>
+                                  {/* Translation with black font */}
+                                  <span className="bg-white text-black font-black px-2.5 py-0.5 rounded-md text-xs shadow-sm border border-slate-300 tracking-wide">
+                                    {tappedWordState.translatedText || (
+                                      tappedWordState.isLoading ? (
+                                        <span className="text-slate-600 italic font-normal flex items-center gap-1">
+                                          <Loader2 className="w-2.5 h-2.5 animate-spin text-slate-700" />
+                                          در حال ترجمه...
+                                        </span>
+                                      ) : '...'
+                                    )}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0 mr-auto">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      speakMessageText(tappedWordState.wordText, `word_${tappedWordState.wordText}`, {
+                                        forceLang: tappedWordState.isEnglish ? 'en-US' : 'fa-IR',
+                                      });
+                                    }}
+                                    className="p-1 rounded-lg bg-amber-200 hover:bg-amber-300 text-slate-900 transition-colors"
+                                    title="تلفظ صوتی این کلمه"
+                                  >
+                                    <Volume2 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setTappedWordState(null);
+                                    }}
+                                    className="p-1 rounded-lg hover:bg-amber-200 text-slate-700 hover:text-black transition-colors"
+                                    title="بستن ترجمه کلمه"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ) : speechState.isPlaying && speechState.messageId === msg.id ? (
+                            <div className="mt-2 pt-1 border-t border-white/20 select-none animate-fadeIn">
+                              <div className="bg-amber-100 border border-amber-300 rounded-xl p-2 shadow-sm flex flex-wrap items-center justify-between gap-1.5 text-[11px]">
+                                <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                  <Volume2 className="w-3.5 h-3.5 text-emerald-700 animate-pulse shrink-0" />
+                                  <span className="text-[10px] text-slate-800 font-semibold">در حال خواندن:</span>
+                                  <strong className="text-slate-950 font-black bg-amber-400 px-2 py-0.5 rounded-md text-xs shadow-sm ring-1 ring-amber-500">{speechState.currentWord || '...'}</strong>
+                                  <span className="text-slate-600 font-black text-xs select-none">{speechState.isEnglishSpoken ? '⟵' : '⟶'}</span>
+                                  <span className="text-[10px] text-slate-800 font-semibold">{speechState.isEnglishSpoken ? 'ترجمه فارسی:' : 'English:'}</span>
+                                  {/* Translation with black font */}
+                                  <strong className="bg-white text-black font-black px-2.5 py-0.5 rounded-md text-xs shadow-sm border border-slate-300 tracking-wide">
                                     {speechState.currentWordTranslation || '...'}
                                   </strong>
                                   {speechState.totalLines > 1 && (
-                                    <span className="text-[10px] text-emerald-200/90 bg-emerald-500/20 px-1.5 py-0.2 rounded border border-emerald-400/30 mr-1">
+                                    <span className="text-[10px] text-slate-700 bg-amber-200/80 px-1.5 py-0.5 rounded border border-amber-300 mr-1">
                                       خط {speechState.currentLineIndex + 1} از {speechState.totalLines}
                                     </span>
                                   )}
-                                </span>
-                              </span>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  stopSpeech();
-                                }}
-                                className="text-[10px] bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 px-2 py-0.5 rounded-md flex items-center gap-1 shrink-0 transition-colors"
-                                title="توقف خوانش صدا"
-                              >
-                                <Square className="w-2.5 h-2.5 fill-current" />
-                                <span>توقف</span>
-                              </button>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    stopSpeech();
+                                  }}
+                                  className="text-[10px] bg-rose-500/20 hover:bg-rose-500/30 text-rose-800 border border-rose-400 px-2 py-0.5 rounded-md flex items-center gap-1 shrink-0 transition-colors mr-auto"
+                                  title="توقف خوانش صدا"
+                                >
+                                  <Square className="w-2.5 h-2.5 fill-current" />
+                                  <span>توقف</span>
+                                </button>
+                              </div>
                             </div>
-                          )}
+                          ) : null}
                         </div>
                       )}
                     </>
@@ -1480,17 +1655,80 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                           text={messageTranslations[msg.id].translated}
                           isPlaying={speechState.isPlaying && speechState.messageId === `${msg.id}_trans`}
                           activeWordIndex={speechState.currentWordIndex}
+                          selectedWordIndex={tappedWordState?.messageId === `${msg.id}_trans` ? tappedWordState.wordIndex : null}
+                          onWordClick={(wIdx, wText) => handleWordTap(`${msg.id}_trans`, wIdx, wText, messageTranslations[msg.id].translated)}
                         />
                       </div>
-                      {speechState.isPlaying && speechState.messageId === `${msg.id}_trans` && (
-                        <div className="mt-1.5 pt-1 border-t border-indigo-400/30 flex flex-wrap items-center justify-between gap-1 text-[10px] text-indigo-200 select-none bg-black/25 px-2 py-1 rounded-lg">
-                          <span className="flex items-center gap-1 flex-wrap">
-                            <Volume2 className="w-3 h-3 text-emerald-400 animate-pulse shrink-0" />
-                            <span>در حال خواندن:</span>
-                            <strong className="text-slate-950 font-bold bg-amber-400 px-1.5 py-0.5 rounded text-[11px]">{speechState.currentWord || '...'}</strong>
-                            <span className="text-white/60 mx-0.5">{speechState.isEnglishSpoken ? '⟵' : '⟶'}</span>
-                            <span className="text-slate-300 text-[10px]">{speechState.isEnglishSpoken ? 'ترجمه:' : 'English:'}</span>
-                            <strong className="text-emerald-300 font-bold bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-400/30 text-[11px]">{speechState.currentWordTranslation || '...'}</strong>
+
+                      {/* Interactive Tapped Word Translation in Translated Message (با فونت مشکی) */}
+                      {tappedWordState?.messageId === `${msg.id}_trans` ? (
+                        <div className="mt-2 pt-1 border-t border-indigo-400/30 select-none animate-fadeIn">
+                          <div className="bg-amber-100 border border-amber-300 rounded-xl p-2 shadow-sm flex items-center justify-between gap-1.5 text-[11px]">
+                            <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                              <span className="text-[10px] text-slate-800 font-semibold">
+                                {tappedWordState.isEnglish ? 'کلمه انگلیسی:' : 'کلمه فارسی:'}
+                              </span>
+                              <span className="bg-amber-400 text-slate-950 font-black px-2 py-0.5 rounded-md text-xs shadow-sm ring-1 ring-amber-500">
+                                {tappedWordState.wordText}
+                              </span>
+                              <span className="text-slate-600 font-black text-xs select-none">
+                                {tappedWordState.isEnglish ? '⟵' : '⟶'}
+                              </span>
+                              <span className="text-[10px] text-slate-800 font-semibold">
+                                {tappedWordState.isEnglish ? 'ترجمه فارسی:' : 'English:'}
+                              </span>
+                              {/* Translation with black font */}
+                              <span className="bg-white text-black font-black px-2.5 py-0.5 rounded-md text-xs shadow-sm border border-slate-300 tracking-wide">
+                                {tappedWordState.translatedText || (
+                                  tappedWordState.isLoading ? (
+                                    <span className="text-slate-600 italic font-normal flex items-center gap-1">
+                                      <Loader2 className="w-2.5 h-2.5 animate-spin text-slate-700" />
+                                      در حال ترجمه...
+                                    </span>
+                                  ) : '...'
+                                )}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0 mr-auto">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  speakMessageText(tappedWordState.wordText, `word_${tappedWordState.wordText}`, {
+                                    forceLang: tappedWordState.isEnglish ? 'en-US' : 'fa-IR',
+                                  });
+                                }}
+                                className="p-1 rounded-lg bg-amber-200 hover:bg-amber-300 text-slate-900 transition-colors"
+                                title="تلفظ صوتی کلمه"
+                              >
+                                <Volume2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setTappedWordState(null);
+                                }}
+                                className="p-1 rounded-lg hover:bg-amber-200 text-slate-700 hover:text-black transition-colors"
+                                title="بستن ترجمه"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : speechState.isPlaying && speechState.messageId === `${msg.id}_trans` ? (
+                        <div className="mt-1.5 pt-1 border-t border-indigo-400/30 flex flex-wrap items-center justify-between gap-1 text-[10px] select-none bg-amber-100 border border-amber-300 p-2 rounded-xl text-slate-900 shadow-sm">
+                          <span className="flex items-center gap-1.5 flex-wrap">
+                            <Volume2 className="w-3.5 h-3.5 text-emerald-700 animate-pulse shrink-0" />
+                            <span className="text-[10px] text-slate-800 font-semibold">در حال خواندن:</span>
+                            <strong className="text-slate-950 font-black bg-amber-400 px-2 py-0.5 rounded-md text-xs shadow-sm ring-1 ring-amber-500">{speechState.currentWord || '...'}</strong>
+                            <span className="text-slate-600 font-black text-xs select-none">{speechState.isEnglishSpoken ? '⟵' : '⟶'}</span>
+                            <span className="text-[10px] text-slate-800 font-semibold">{speechState.isEnglishSpoken ? 'ترجمه فارسی:' : 'English:'}</span>
+                            {/* Translation with black font */}
+                            <strong className="bg-white text-black font-black px-2.5 py-0.5 rounded-md text-xs shadow-sm border border-slate-300 tracking-wide">
+                              {speechState.currentWordTranslation || '...'}
+                            </strong>
                           </span>
                           <button
                             type="button"
@@ -1498,13 +1736,13 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
                               e.stopPropagation();
                               stopSpeech();
                             }}
-                            className="text-[9px] bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 px-1.5 py-0.5 rounded border border-rose-500/30 transition-colors flex items-center gap-1"
+                            className="text-[9px] bg-rose-500/20 hover:bg-rose-500/30 text-rose-800 px-1.5 py-0.5 rounded border border-rose-400 transition-colors flex items-center gap-1 mr-auto"
                           >
                             <Square className="w-2 h-2 fill-current" />
                             <span>توقف</span>
                           </button>
                         </div>
-                      )}
+                      ) : null}
                     </div>
                   )}
 
@@ -1730,114 +1968,60 @@ export const ChatRoom: React.FC<ChatRoomProps> = ({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Active Spoken Speech Bar with Real-Time Word-by-Word Bilingual Translation (پایین صفحه: پخش گفتار و ترجمه بلادرنگ واژگان) */}
+      {/* Active Spoken Speech Bar (پایین صفحه: کنترلر خوانش صوتی - ترجمه کلمه‌به‌کلمه طبق درخواست کاربر فقط روی خود پیام نمایش داده می‌شود) */}
       {speechState.isPlaying && (
-        <div className="bg-slate-900/95 border-t-2 border-emerald-500/70 p-2.5 z-20 backdrop-blur-md animate-in slide-in-from-bottom-2 shadow-2xl space-y-2">
-          {/* Header row: Spoken language, progress count, speed and stop controls */}
-          <div className="flex items-center justify-between text-xs text-slate-200">
-            <div className="flex items-center gap-2 overflow-hidden min-w-0">
-              <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 shrink-0">
-                <Volume2 className="w-4 h-4 animate-pulse" />
-              </div>
-              <div className="flex items-center gap-1.5 text-xs font-semibold truncate">
+        <div className="bg-slate-900/95 border-t-2 border-emerald-500/70 px-3 py-2 z-20 backdrop-blur-md animate-in slide-in-from-bottom-2 shadow-2xl flex items-center justify-between text-xs text-slate-200">
+          <div className="flex items-center gap-2 overflow-hidden min-w-0">
+            <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 shrink-0">
+              <Volume2 className="w-4 h-4 animate-pulse" />
+            </div>
+            <div className="truncate text-xs">
+              <div className="flex items-center gap-1.5 font-bold">
                 <span className="text-slate-300">در حال خوانش گفتار:</span>
                 {speechState.isEnglishSpoken ? (
-                  <span className="bg-blue-500/25 text-blue-300 border border-blue-400/40 px-2 py-0.5 rounded-md text-[11px] font-bold flex items-center gap-1">
-                    <span>انگلیسی</span>
-                    <span className="text-[10px]">🇬🇧</span>
+                  <span className="bg-blue-500/25 text-blue-300 border border-blue-400/40 px-1.5 py-0.2 rounded text-[10px] font-bold">
+                    انگلیسی 🇬🇧
                   </span>
                 ) : (
-                  <span className="bg-emerald-500/25 text-emerald-300 border border-emerald-400/40 px-2 py-0.5 rounded-md text-[11px] font-bold flex items-center gap-1">
-                    <span>فارسی</span>
-                    <span className="text-[10px]">🇮🇷</span>
+                  <span className="bg-emerald-500/25 text-emerald-300 border border-emerald-400/40 px-1.5 py-0.2 rounded text-[10px] font-bold">
+                    فارسی 🇮🇷
                   </span>
                 )}
                 {speechState.words.length > 0 && (
-                  <span className="text-[10px] text-slate-400 mr-1 hidden sm:inline">
+                  <span className="text-[10px] text-slate-400 font-normal">
                     (کلمه {speechState.currentWordIndex + 1} از {speechState.words.length})
                   </span>
                 )}
               </div>
-            </div>
-
-            {/* Action Buttons: Speed & Stop */}
-            <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => setShowSpeechSpeedModal(true)}
-                className="text-emerald-200 hover:text-white px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 transition-colors flex items-center gap-1 text-[11px] font-medium"
-                title="تنظیم سرعت خواندن گفتار"
-              >
-                <Gauge className="w-3.5 h-3.5 text-emerald-300" />
-                <span className="font-mono text-[10px] font-bold">
-                  {speechState.rate ? `${speechState.rate.toFixed(2)}x` : `${getSpeechRate().toFixed(2)}x`}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={stopSpeech}
-                className="text-rose-200 hover:text-white px-2.5 py-1 rounded-lg bg-rose-500/25 hover:bg-rose-500/35 border border-rose-500/40 transition-colors flex items-center gap-1 text-[11px] font-medium"
-                title="توقف خواندن صوتی"
-              >
-                <Square className="w-3 h-3 fill-current" />
-                <span>توقف</span>
-              </button>
+              <div className="text-[10px] text-slate-400 truncate mt-0.5">
+                «{speechState.text}»
+              </div>
             </div>
           </div>
 
-          {/* Prominent Bilingual Word-by-Word Translation Card (نمایش کلمه و ترجمه متقابل در پایین صفحه) */}
-          <div className="bg-black/55 border border-emerald-500/30 rounded-xl p-2.5 flex flex-wrap items-center justify-between gap-2.5 shadow-inner">
-            <div className="flex items-center gap-2.5 flex-wrap min-w-0">
-              {/* Spoken Word (کلمه خوانده‌شده) */}
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className="text-[11px] text-slate-400">
-                  {speechState.isEnglishSpoken ? 'کلمه خوانده‌شده (انگلیسی):' : 'کلمه خوانده‌شده (فارسی):'}
-                </span>
-                <span
-                  dir={speechState.isEnglishSpoken ? 'ltr' : 'rtl'}
-                  className="font-bold text-slate-950 bg-amber-400 px-2.5 py-0.5 rounded-lg shadow-md ring-2 ring-amber-300 text-xs tracking-wide inline-block"
-                >
-                  {speechState.currentWord || '...'}
-                </span>
-              </div>
-
-              {/* Translation Direction Arrow */}
-              <div className="flex items-center text-emerald-400 font-black text-sm px-0.5 select-none shrink-0">
-                {speechState.isEnglishSpoken ? '⟵' : '⟶'}
-              </div>
-
-              {/* Translated Counterpart Word (ترجمه بلادرنگ واژه) */}
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className="text-[11px] text-slate-400">
-                  {speechState.isEnglishSpoken ? 'ترجمه فارسی کلمه:' : 'English Translation:'}
-                </span>
-                <span
-                  dir={speechState.isEnglishSpoken ? 'rtl' : 'ltr'}
-                  className={`font-bold px-2.5 py-0.5 rounded-lg text-xs shadow-sm border transition-all ${
-                    speechState.currentWordTranslation
-                      ? speechState.isEnglishSpoken
-                        ? 'bg-emerald-500/30 text-emerald-200 border-emerald-400/50 ring-1 ring-emerald-400/30'
-                        : 'bg-cyan-500/30 text-cyan-200 border-cyan-400/50 ring-1 ring-cyan-400/30 font-mono tracking-wide'
-                      : 'bg-slate-800 text-slate-400 border-slate-700 italic'
-                  }`}
-                >
-                  {speechState.currentWordTranslation || (
-                    <span className="flex items-center gap-1">
-                      <Loader2 className="w-3 h-3 animate-spin text-emerald-400" />
-                      <span>در حال دریافت ترجمه...</span>
-                    </span>
-                  )}
-                </span>
-              </div>
-            </div>
-
-            {/* Line indicator if multi-line message */}
-            {speechState.totalLines > 1 && (
-              <span className="text-[10px] text-emerald-300/90 bg-emerald-500/20 border border-emerald-500/30 px-2 py-0.5 rounded-md shrink-0">
-                خط {speechState.currentLineIndex + 1} از {speechState.totalLines}
+          {/* Action Buttons: Speed & Stop */}
+          <div className="flex items-center gap-1.5 shrink-0 ml-2">
+            <button
+              type="button"
+              onClick={() => setShowSpeechSpeedModal(true)}
+              className="text-emerald-200 hover:text-white px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 transition-colors flex items-center gap-1 text-[11px] font-medium"
+              title="تنظیم سرعت خواندن گفتار"
+            >
+              <Gauge className="w-3.5 h-3.5 text-emerald-300" />
+              <span className="font-mono text-[10px] font-bold">
+                {speechState.rate ? `${speechState.rate.toFixed(2)}x` : `${getSpeechRate().toFixed(2)}x`}
               </span>
-            )}
+            </button>
+
+            <button
+              type="button"
+              onClick={stopSpeech}
+              className="text-rose-200 hover:text-white px-2.5 py-1 rounded-lg bg-rose-500/25 hover:bg-rose-500/35 border border-rose-500/40 transition-colors flex items-center gap-1 text-[11px] font-medium"
+              title="توقف خواندن صوتی"
+            >
+              <Square className="w-3 h-3 fill-current" />
+              <span>توقف</span>
+            </button>
           </div>
         </div>
       )}
